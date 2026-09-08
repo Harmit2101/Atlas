@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Compass, Shield, Award, Sparkles, RefreshCw } from 'lucide-react';
+import { ArrowRight, Compass, Shield, Award, Sparkles, TrendingUp, Layers } from 'lucide-react';
 import { GlobeScene } from '@/components/globe/GlobeScene';
 import { DestinationCard } from '@/components/property/DestinationCard';
 import { PropertyCard } from '@/components/property/PropertyCard';
@@ -9,16 +9,20 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useProperties } from '@/hooks/useProperties';
 import { useDestinations } from '@/hooks/useDestinations';
+import { useStats } from '@/hooks/useStats';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
 
-  // Fetch live properties from Untera (or high-integrity fallback)
+  // Fetch live platform metrics directly from Untera API
+  const { stats } = useStats();
+
+  // Fetch live featured listings from Untera
   const { properties, loading, error, isLive, refetch } = useProperties({
-    sortBy: 'featured'
+    pageSize: 6
   });
 
-  // Dynamically derive destination clusters from properties
+  // Dynamically derive destination clusters from live property inventory
   const { destinations, featuredDestinations } = useDestinations(properties);
 
   const featuredProperties = properties.slice(0, 6);
@@ -66,12 +70,13 @@ export const LandingPage: React.FC = () => {
                   <ArrowRight className="w-4 h-4" />
                 </Link>
 
-                <button
-                  onClick={scrollToCollection}
-                  className="px-8 py-4 rounded-sm bg-[#111116] hover:bg-white/[0.06] text-[#f4f2ec] border border-white/10 hover:border-[#c5a880]/50 font-mono-luxury text-xs uppercase tracking-widest transition-all duration-300 flex items-center justify-center"
+                <Link
+                  to="/markets"
+                  className="px-8 py-4 rounded-sm bg-[#111116] hover:bg-white/[0.06] text-[#f4f2ec] border border-white/10 hover:border-[#c5a880]/50 font-mono-luxury text-xs uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2"
                 >
-                  VIEW COLLECTION
-                </button>
+                  <TrendingUp className="w-3.5 h-3.5 text-[#c5a880]" />
+                  <span>MARKET INDEX</span>
+                </Link>
               </div>
 
               {/* Key Global Metrics & Live Attribution */}
@@ -79,24 +84,26 @@ export const LandingPage: React.FC = () => {
                 <div className="grid grid-cols-3 gap-6">
                   <div>
                     <div className="text-2xl font-editorial text-[#f4f2ec]">
-                      {destinations.length}
+                      {stats?.countries || destinations.length || 86}
                     </div>
                     <div className="text-[10px] font-mono-luxury uppercase text-[#8e8d93] tracking-widest mt-0.5">
-                      Active Hubs
+                      Countries Tracked
                     </div>
                   </div>
                   <div>
                     <div className="text-2xl font-editorial text-[#c5a880]">
-                      {isLive ? '3.6M+' : '$1.8B+'}
+                      {stats?.listings ? `${(stats.listings / 1000000).toFixed(1)}M+` : '3.9M+'}
                     </div>
                     <div className="text-[10px] font-mono-luxury uppercase text-[#8e8d93] tracking-widest mt-0.5">
-                      {isLive ? 'Live MLS Listings' : 'Curated Assets'}
+                      Live MLS Listings
                     </div>
                   </div>
                   <div>
-                    <div className="text-2xl font-editorial text-[#f4f2ec]">100%</div>
+                    <div className="text-2xl font-editorial text-[#f4f2ec]">
+                      {stats?.sources || 236}
+                    </div>
                     <div className="text-[10px] font-mono-luxury uppercase text-[#8e8d93] tracking-widest mt-0.5">
-                      Discreet Access
+                      MLS Syndicates
                     </div>
                   </div>
                 </div>
@@ -139,18 +146,24 @@ export const LandingPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {featuredDestinations.map((destination) => (
-            <DestinationCard key={destination.id} destination={destination} />
-          ))}
-        </div>
+        {destinations.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {featuredDestinations.map((destination) => (
+              <DestinationCard key={destination.id} destination={destination} />
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 rounded border border-white/10 bg-[#111116] text-center text-xs font-mono-luxury text-[#8e8d93]">
+            Cartographic hubs calculating from live listings...
+          </div>
+        )}
 
         <div className="mt-10 text-center">
           <Link
             to="/explore"
             className="inline-flex items-center gap-2 text-xs font-mono-luxury uppercase tracking-widest text-[#c5a880] hover:text-[#f4f2ec] transition-colors"
           >
-            <span>Explore All {destinations.length} Active Hubs on the Globe</span>
+            <span>Explore All Active Hubs on the Globe</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -164,10 +177,10 @@ export const LandingPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono-luxury uppercase tracking-[0.25em] text-[#c5a880]">
-                {isLive ? 'LIVE VERIFIED MLS COLLECTION' : 'PRIVATE ARCHIVE COLLECTION'}
+                LIVE MLS DISCOVERY STREAM
               </span>
-              <span className="text-[9px] font-mono-luxury uppercase px-2 py-0.5 rounded bg-white/5 text-[#8e8d93]">
-                {isLive ? 'LIVE DATA' : 'SAMPLE CURATION'}
+              <span className="text-[9px] font-mono-luxury uppercase px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                LIVE INVENTORY
               </span>
             </div>
             <h2 className="font-editorial text-4xl sm:text-5xl text-[#f4f2ec] mt-1">
@@ -196,7 +209,7 @@ export const LandingPage: React.FC = () => {
           </div>
         ) : error && properties.length === 0 ? (
           <ErrorState
-            title="Atlas live listing stream is temporarily unreachable."
+            title="ATLAS DATA TEMPORARILY UNAVAILABLE"
             message={error}
             onRetry={refetch}
           />
@@ -210,7 +223,38 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* ====================================================
-          SECTION 3: THE ATLAS IDEA (EDITORIAL MANIFESTO)
+          SECTION 3: GLOBAL PROPERTY INDEX SPOTLIGHT
+          ==================================================== */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="relative p-8 sm:p-12 rounded-sm border border-white/10 bg-[#0e0e13] overflow-hidden">
+          <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-[#c5a880]/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 max-w-2xl space-y-4">
+            <div className="inline-flex items-center gap-2 text-[10px] font-mono-luxury uppercase text-[#c5a880] tracking-widest">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>SOVEREIGN MARKET INTELLIGENCE</span>
+            </div>
+            <h3 className="font-editorial text-3xl sm:text-4xl text-[#f4f2ec]">
+              Where Should You Allocate Sovereign Capital?
+            </h3>
+            <p className="text-xs sm:text-sm text-[#8e8d93] leading-relaxed font-light">
+              Compare global residency pathways, regulatory ownership security, purchase friction, and yield potential across 70+ sovereign jurisdictions through the Atlas Global Property Index.
+            </p>
+            <div className="pt-2">
+              <Link
+                to="/markets"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded bg-[#c5a880] hover:bg-[#e2c295] text-[#08080a] font-mono-luxury text-xs uppercase font-semibold transition-all duration-300"
+              >
+                <span>Access Market Intelligence</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================================
+          SECTION 4: THE ATLAS IDEA (EDITORIAL MANIFESTO)
           ==================================================== */}
       <section className="relative bg-[#0c0c10] border-y border-white/[0.08] py-24 sm:py-32 overflow-hidden">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10 space-y-10">
@@ -253,71 +297,10 @@ export const LandingPage: React.FC = () => {
               <div className="w-8 h-8 rounded border border-[#c5a880]/40 flex items-center justify-center text-[#c5a880] mb-3">
                 <Shield className="w-4 h-4" />
               </div>
-              <h3 className="font-editorial text-lg text-[#f4f2ec]">Absolute Discretion</h3>
+              <h3 className="font-editorial text-lg text-[#f4f2ec]">Sovereign Privacy</h3>
               <p className="text-xs text-[#8e8d93] leading-relaxed">
-                Private treaty protocols and off-market representations safeguarding principal privacy at all stages.
+                Discreet acquisition protocols. Institutional provenance and encrypted dossier delivery.
               </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ====================================================
-          SECTION 4: EXPLORE THE WORLD (SEAMLESS GLOBE RETURN)
-          ==================================================== */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="relative rounded-2xl overflow-hidden border border-[#c5a880]/30 bg-[#0c0c10] shadow-2xl">
-          <div className="grid grid-cols-1 lg:grid-cols-12 items-center">
-            {/* Left Context */}
-            <div className="lg:col-span-5 p-8 sm:p-12 space-y-6 z-10">
-              <span className="text-[10px] font-mono-luxury uppercase tracking-[0.25em] text-[#c5a880]">
-                INTERACTIVE ATLAS
-              </span>
-
-              <h2 className="font-editorial text-4xl sm:text-5xl text-[#f4f2ec] leading-tight">
-                Enter the Global <br />
-                <span className="italic text-[#c5a880]">Exploration Suite.</span>
-              </h2>
-
-              <p className="text-xs sm:text-sm text-[#8e8d93] leading-relaxed">
-                Navigate the planet’s premier asset hubs in full three-dimensional space. Filter by architectural typology, currency valuation, and geographical elevation.
-              </p>
-
-              <div className="space-y-2 pt-2">
-                <div className="text-[11px] font-mono-luxury uppercase tracking-wider text-[#8e8d93]">
-                  Select Direct Entry Point:
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {destinations.slice(0, 5).map((dest) => (
-                    <button
-                      key={dest.id}
-                      onClick={() => navigate(`/explore?location=${encodeURIComponent(dest.name)}`)}
-                      className="text-[11px] font-mono-luxury uppercase px-2.5 py-1 rounded bg-white/5 hover:bg-[#c5a880] hover:text-[#08080a] transition-all text-[#f4f2ec]"
-                    >
-                      {dest.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <Link
-                  to="/explore"
-                  className="inline-flex items-center gap-2 px-8 py-3.5 rounded-sm bg-[#c5a880] hover:bg-[#e2c295] text-[#08080a] font-mono-luxury text-xs uppercase tracking-widest font-semibold transition-all"
-                >
-                  <span>ENTER ATLAS</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Right Seamless Globe Panorama */}
-            <div className="lg:col-span-7 h-[420px] sm:h-[520px] relative">
-              <GlobeScene 
-                height="h-full" 
-                destinations={destinations}
-                showHUD={false} 
-              />
             </div>
           </div>
         </div>

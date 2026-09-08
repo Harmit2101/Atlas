@@ -13,12 +13,27 @@ interface PropertyFilterBarProps {
 }
 
 const PROPERTY_TYPES = [
+  'Residential',
   'Villa',
-  'Penthouse',
   'Apartment',
   'House',
-  'Estate',
-  'Chalet'
+  'Penthouse',
+  'Commercial',
+  'Land'
+];
+
+const POPULAR_COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'AE', name: 'United Arab Emirates' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'FR', name: 'France' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'CO', name: 'Colombia' },
+  { code: 'CR', name: 'Costa Rica' },
+  { code: 'PA', name: 'Panama' },
+  { code: 'GH', name: 'Ghana' }
 ];
 
 export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
@@ -32,42 +47,39 @@ export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
   return (
     <div className="bg-[#111116] border border-white/[0.08] p-5 rounded-sm space-y-5">
       {/* Top Filter Controls */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5">
         {/* Search Input */}
-        <div>
+        <div className="lg:col-span-2">
           <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1.5">
-            Search Term
+            Search Location / Keyword
           </label>
           <input
             type="text"
-            placeholder="Title, architectural style, or keyword..."
-            value={filter.searchQuery || ''}
-            onChange={(e) => onChange({ ...filter, searchQuery: e.target.value })}
+            placeholder="City, region, title, or keyword..."
+            value={filter.searchQuery || filter.location || ''}
+            onChange={(e) => onChange({ 
+              ...filter, 
+              searchQuery: e.target.value,
+              location: e.target.value 
+            })}
             className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-xs text-[#f4f2ec] placeholder-[#5c5b62] focus:border-[#c5a880] outline-none"
           />
         </div>
 
-        {/* Destination / Hub Dropdown */}
+        {/* Country Dropdown */}
         <div>
           <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1.5">
-            Territory / Hub
+            Country / Region
           </label>
           <select
-            value={filter.destinationId || filter.location || ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              onChange({ 
-                ...filter, 
-                destinationId: val,
-                location: val 
-              });
-            }}
+            value={filter.country || ''}
+            onChange={(e) => onChange({ ...filter, country: e.target.value })}
             className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-xs text-[#f4f2ec] focus:border-[#c5a880] outline-none"
           >
-            <option value="">All Global Hubs ({destinations.length})</option>
-            {destinations.map((d) => (
-              <option key={d.id} value={d.name}>
-                {d.name}, {d.country} ({d.propertyCount})
+            <option value="">All Countries</option>
+            {POPULAR_COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name} ({c.code})
               </option>
             ))}
           </select>
@@ -83,9 +95,9 @@ export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
             onChange={(e) => onChange({ ...filter, transactionType: e.target.value })}
             className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-xs text-[#f4f2ec] focus:border-[#c5a880] outline-none"
           >
-            <option value="">All Acquisitions</option>
-            <option value="sale">Private Sale</option>
-            <option value="rent">Seasonal Sovereign Lease</option>
+            <option value="">All Transactions</option>
+            <option value="sale">For Sale</option>
+            <option value="rent">For Rent / Lease</option>
           </select>
         </div>
 
@@ -100,10 +112,11 @@ export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
             className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-xs text-[#f4f2ec] focus:border-[#c5a880] outline-none"
           >
             <option value="">Any Bedrooms</option>
+            <option value="1">1+ Bedrooms</option>
+            <option value="2">2+ Bedrooms</option>
             <option value="3">3+ Bedrooms</option>
             <option value="4">4+ Bedrooms</option>
             <option value="5">5+ Bedrooms</option>
-            <option value="6">6+ Bedrooms</option>
           </select>
         </div>
 
@@ -117,7 +130,7 @@ export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
             onChange={(e) => onChange({ ...filter, sortBy: e.target.value as any })}
             className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-xs text-[#f4f2ec] focus:border-[#c5a880] outline-none"
           >
-            <option value="featured">Atlas Curated First</option>
+            <option value="featured">Featured First</option>
             <option value="price-desc">Price: High to Low</option>
             <option value="price-asc">Price: Low to High</option>
             <option value="area-desc">Area: Largest First</option>
@@ -144,11 +157,11 @@ export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
               onClick={() =>
                 onChange({
                   ...filter,
-                  propertyType: filter.propertyType === type ? '' : type
+                  propertyType: filter.propertyType?.toLowerCase() === type.toLowerCase() ? '' : type.toLowerCase()
                 })
               }
               className={`text-[11px] font-mono-luxury uppercase px-3 py-1 rounded transition-colors ${
-                filter.propertyType === type
+                filter.propertyType?.toLowerCase() === type.toLowerCase()
                   ? 'bg-[#c5a880] text-[#08080a] font-semibold'
                   : 'bg-white/5 text-[#8e8d93] hover:text-[#f4f2ec]'
               }`}
@@ -161,7 +174,7 @@ export const PropertyFilterBar: React.FC<PropertyFilterBarProps> = ({
         {/* Result count & reset */}
         <div className="flex items-center gap-4 text-xs font-mono-luxury text-[#8e8d93]">
           <span className="text-[#c5a880] font-semibold">
-            {resultCount} {isLive ? 'Live MLS Assets' : 'Curated Assets'}
+            {resultCount} {isLive ? 'Live MLS Listings' : 'Verified Listings'}
           </span>
           <button
             onClick={onReset}

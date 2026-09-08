@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Compass, ShieldCheck, Globe2, Landmark, ArrowRight } from 'lucide-react';
+import { Compass, ShieldCheck, Globe2, Landmark, ArrowRight, ExternalLink } from 'lucide-react';
+import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 
 export const AboutPage: React.FC = () => {
   return (
@@ -12,10 +13,10 @@ export const AboutPage: React.FC = () => {
         </span>
         <h1 className="font-editorial text-5xl sm:text-6xl text-[#f4f2ec] leading-tight">
           A Global Lens for <br />
-          <span className="italic text-[#c5a880]">Exceptional Capital.</span>
+          <span className="italic text-[#c5a880]">Exceptional Real Estate.</span>
         </h1>
         <p className="text-sm sm:text-base text-[#8e8d93] font-light leading-relaxed">
-          Founded on the conviction that high-value real estate discovery should feel like exploring fine art and financial intelligence—not sorting through generic real estate portals.
+          ATLAS is a unified cartographic discovery interface for exceptional property and global real-estate opportunities, engineered by HM Coding.
         </p>
       </div>
 
@@ -23,16 +24,16 @@ export const AboutPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center pt-8 border-t border-white/[0.08]">
         <div className="space-y-4">
           <span className="text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
-            OUR GENESIS
+            OUR PURPOSE
           </span>
           <h2 className="font-editorial text-3xl text-[#f4f2ec]">
-            Redefining the Global Discovery Experience
+            Unified International Discovery
           </h2>
           <p className="text-xs sm:text-sm text-[#8e8d93] leading-relaxed font-light">
-            Traditional real estate platforms are fragmented by nation, language, and parochial broker networks. ATLAS unifies the top tier of planetary assets under a single cartographic framework.
+            Traditional real-estate portals are fragmented by nation, language, and closed broker syndicates. ATLAS aggregates and normalizes property streams across international jurisdictions under a singular, intuitive 3D cartographic canvas.
           </p>
           <p className="text-xs sm:text-sm text-[#8e8d93] leading-relaxed font-light">
-            Whether evaluating a trophy penthouse along Manhattan’s 57th Street or a private cliffside estate carved into Amalfi limestone, ATLAS brings clarity, architectural pedigree, and spatial context to every opportunity.
+            ATLAS acts as an independent discovery engine. Listings showcased on ATLAS are syndicated from verified external MLS providers and multi-national brokerage networks. We do not hold title or ownership over individual listings, ensuring transparent provenance.
           </p>
         </div>
 
@@ -42,17 +43,15 @@ export const AboutPage: React.FC = () => {
               <Globe2 className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-editorial text-lg text-[#f4f2ec]">HM Coding Standards</div>
-              <div className="text-[10px] font-mono-luxury text-[#8e8d93]">GLOBAL ASSET INTELLIGENCE</div>
+              <div className="font-editorial text-lg text-[#f4f2ec]">Data & Intelligence Network</div>
+              <div className="text-[10px] font-mono-luxury text-[#8e8d93]">UNTERA REAL ESTATE MLS</div>
             </div>
           </div>
           <p className="text-xs text-[#8e8d93] leading-relaxed">
-            All code, cartographic shaders, and user interface architecture are engineered with zero third-party telemetry bloat, ensuring absolute privacy, blazing speed, and cross-platform fidelity.
+            Live listing inventory, pricing conversions, and the Global Property Index are powered by the Untera real-estate network, accessing over 3.9M+ listings across 80+ countries.
           </p>
-          <div className="pt-2 flex items-center gap-4 text-xs font-mono-luxury text-[#c5a880]">
-            <span>100% OPEN SOURCE STACK</span>
-            <span>·</span>
-            <span>VERCEL & SUPABASE READY</span>
+          <div className="pt-2">
+            <UnteraAttribution variant="badge" />
           </div>
         </div>
       </div>
@@ -63,7 +62,7 @@ export const AboutPage: React.FC = () => {
           <span className="text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
             THE FOUR CRITERIA
           </span>
-          <h2 className="font-editorial text-3xl text-[#f4f2ec]">The Atlas Curation Filter</h2>
+          <h2 className="font-editorial text-3xl text-[#f4f2ec]">The Atlas Curation Standard</h2>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -103,7 +102,7 @@ export const AboutPage: React.FC = () => {
             </div>
             <h3 className="font-editorial text-lg text-[#f4f2ec]">Capital Durability</h3>
             <p className="text-xs text-[#8e8d93] leading-relaxed">
-              Assets situated in blue-chip financial jurisdictions offering generational capital preservation.
+              Assets situated in blue-chip financial jurisdictions offering generational capital preservation and legal clarity.
             </p>
           </div>
         </div>
@@ -115,7 +114,7 @@ export const AboutPage: React.FC = () => {
           Experience Global Discovery
         </h3>
         <p className="text-xs sm:text-sm text-[#8e8d93] max-w-lg mx-auto">
-          Begin exploring our curated portfolio across 16 world territories or submit a discreet inquiry for private off-market listings.
+          Begin exploring live listings across sovereign territories or analyze our Global Property Index.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
@@ -125,10 +124,10 @@ export const AboutPage: React.FC = () => {
             Explore the Globe
           </Link>
           <Link
-            to="/contact"
+            to="/markets"
             className="px-8 py-3.5 rounded-sm bg-transparent border border-white/10 text-[#f4f2ec] hover:border-[#c5a880] font-mono-luxury text-xs uppercase tracking-widest transition-colors"
           >
-            Contact Private Advisory
+            Global Property Index
           </Link>
         </div>
       </div>

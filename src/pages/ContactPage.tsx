@@ -37,14 +37,22 @@ export const ContactPage: React.FC = () => {
         {/* Left Contact Form */}
         <div className="lg:col-span-7 bg-[#111116] border border-white/[0.08] p-8 rounded-sm">
           {submitted ? (
-            <div className="py-16 text-center space-y-4">
+            <div className="py-12 text-center space-y-4">
               <div className="w-12 h-12 rounded-full bg-[#c5a880] text-[#08080a] flex items-center justify-center mx-auto">
                 <Check className="w-6 h-6" />
               </div>
-              <h3 className="font-editorial text-3xl text-[#f4f2ec]">Inquiry Encrypted & Received</h3>
+              <h3 className="font-editorial text-3xl text-[#f4f2ec]">Inquiry Dossier Prepared</h3>
               <p className="text-xs text-[#8e8d93] max-w-md mx-auto leading-relaxed">
-                Thank you. A senior partner from HM Coding Atlas Advisory will review your inquiry and initiate contact via your preferred confidential channel.
+                Your acquisition inquiry parameters have been validated. To maintain confidential end-to-end encryption without third-party form storage, please dispatch directly to our advisory desk.
               </p>
+              <div className="pt-2">
+                <a
+                  href={`mailto:advisory@hmcoding.com?subject=${encodeURIComponent(`[ATLAS ADVISORY] ${formData.inquiryType} - ${formData.territory}`)}&body=${encodeURIComponent(`Principal: ${formData.name}\nOffice: ${formData.title}\nContact: ${formData.phone}\nTerritory: ${formData.territory}\n\nRequirements:\n${formData.message}`)}`}
+                  className="inline-flex items-center gap-2 px-8 py-3.5 rounded-sm bg-[#c5a880] text-[#08080a] font-mono-luxury text-xs uppercase tracking-widest font-semibold hover:bg-[#e2c295] transition-colors"
+                >
+                  <span>Dispatch Secure Email (advisory@hmcoding.com)</span>
+                </a>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">

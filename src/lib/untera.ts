@@ -1,4 +1,5 @@
-import { UnteraRawListing, UnteraSearchResponse } from '@/types/property';
+import { UnteraRawListing, UnteraSearchResponse, UnteraSingleListingResponse } from '@/types/property';
+import { MarketScoresResponse, UnteraStats, UnteraSourcesResponse } from '@/types/market';
 
 const UNTERA_BASE_URL = 'https://api.untera.io/api/v1';
 
@@ -112,73 +113,82 @@ async function unteraFetch<T>(
 
 export interface UnteraSearchFilterParams {
   country?: string;
-  city?: string;
-  min_price?: number;
-  max_price?: number;
-  bedrooms?: number;
-  bathrooms?: number;
-  property_type?: string;
-  transaction_type?: string;
-  q?: string;
-  page?: number;
-  limit?: number;
+  location?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  minBeds?: number;
+  minBaths?: number;
+  minSqm?: number;
+  maxSqm?: number;
+  type?: string;
+  transaction?: string;
   sort?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 /**
- * Search live listings across 80+ countries and 3.6M+ listings
+ * Search live listings across 80+ countries and 3.9M+ listings
+ * Untera search endpoint: GET /listings/search
  */
 export async function searchListings(
   params: UnteraSearchFilterParams = {},
   signal?: AbortSignal
 ): Promise<UnteraSearchResponse> {
+  const pageSize = Math.min(Math.max(params.pageSize || 24, 1), 50);
   const cleanParams: Record<string, any> = {
-    limit: params.limit || 24,
+    pageSize,
     page: params.page || 1
   };
 
   if (params.country) cleanParams.country = params.country;
-  if (params.city) cleanParams.city = params.city;
-  if (params.min_price) cleanParams.min_price = params.min_price;
-  if (params.max_price) cleanParams.max_price = params.max_price;
-  if (params.bedrooms) cleanParams.bedrooms = params.bedrooms;
-  if (params.bathrooms) cleanParams.bathrooms = params.bathrooms;
-  if (params.property_type) cleanParams.property_type = params.property_type;
-  if (params.transaction_type) cleanParams.transaction_type = params.transaction_type;
-  if (params.q) cleanParams.q = params.q;
+  if (params.location) cleanParams.location = params.location;
+  if (params.minPrice !== undefined && params.minPrice > 0) cleanParams.minPrice = params.minPrice;
+  if (params.maxPrice !== undefined && params.maxPrice < 200000000) cleanParams.maxPrice = params.maxPrice;
+  if (params.minBeds !== undefined && params.minBeds > 0) cleanParams.minBeds = params.minBeds;
+  if (params.minBaths !== undefined && params.minBaths > 0) cleanParams.minBaths = params.minBaths;
+  if (params.minSqm !== undefined && params.minSqm > 0) cleanParams.minSqm = params.minSqm;
+  if (params.maxSqm !== undefined && params.maxSqm > 0) cleanParams.maxSqm = params.maxSqm;
+  if (params.type && params.type !== 'all') cleanParams.type = params.type;
+  if (params.transaction && params.transaction !== 'all') cleanParams.transaction = params.transaction;
   if (params.sort) cleanParams.sort = params.sort;
 
-  return unteraFetch<UnteraSearchResponse>('/listings', cleanParams, signal);
+  return unteraFetch<UnteraSearchResponse>('/listings/search', cleanParams, signal);
 }
 
 /**
  * Retrieve single listing details by ID
+ * Untera listing endpoint: GET /listings/{id}
  */
 export async function getListing(
   id: string | number,
   signal?: AbortSignal
 ): Promise<UnteraRawListing> {
-  const result = await unteraFetch<any>(`/listings/${id}`, {}, signal);
-  return result?.data || result;
+  const result = await unteraFetch<UnteraSingleListingResponse | any>(`/listings/${id}`, {}, signal);
+  return result?.listing || result?.data || result;
+}
+
+/**
+ * Retrieve global property market scores
+ * Untera market endpoint: GET /market/scores
+ */
+export async function getMarketScores(signal?: AbortSignal): Promise<MarketScoresResponse> {
+  return unteraFetch<MarketScoresResponse>('/market/scores', {}, signal);
+}
+
+/**
+ * Retrieve platform global statistics
+ * Untera stats endpoint: GET /stats
+ */
+export async function getStats(signal?: AbortSignal): Promise<UnteraStats> {
+  return unteraFetch<UnteraStats>('/stats', {}, signal);
 }
 
 /**
  * Retrieve available property sources
+ * Untera sources endpoint: GET /sources
  */
-export async function getSources(signal?: AbortSignal): Promise<any> {
-  return unteraFetch<any>('/sources', {}, signal);
+export async function getSources(signal?: AbortSignal): Promise<UnteraSourcesResponse> {
+  return unteraFetch<UnteraSourcesResponse>('/sources', {}, signal);
 }
 
-/**
- * Retrieve market scores
- */
-export async function getMarketScores(signal?: AbortSignal): Promise<any> {
-  return unteraFetch<any>('/market-scores', {}, signal);
-}
-
-/**
- * Retrieve platform stats
- */
-export async function getStats(signal?: AbortSignal): Promise<any> {
-  return unteraFetch<any>('/stats', {}, signal);
-}

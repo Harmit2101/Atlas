@@ -78,32 +78,39 @@ export interface AtlasProperty {
 export interface UnteraRawListing {
   id: string | number;
   source_id?: string;
+  source?: string;
   source_name?: string;
   url?: string;
   title?: string;
   description?: string;
   price?: number;
   price_usd?: number;
+  original_price?: number | null;
+  original_currency?: string | null;
   currency?: string;
-  country?: string;
-  city?: string;
-  address?: string;
+  country?: string | null;
+  city?: string | null;
+  location?: string | null;
+  address?: string | null;
   lat?: number;
-  latitude?: number;
+  latitude?: number | null;
   lng?: number;
-  longitude?: number;
+  longitude?: number | null;
   property_type?: string;
+  property_subtype?: string | null;
   type?: string;
+  transaction?: string;
   transaction_type?: string;
-  bedrooms?: number;
+  bedrooms?: number | null;
   beds?: number;
-  bathrooms?: number;
+  bathrooms?: number | null;
   baths?: number;
+  sqm?: number | null;
   area_sqm?: number;
   area_sqft?: number;
   size?: number;
   year_built?: number;
-  images?: string[];
+  images?: string[] | null;
   photos?: string[];
   features?: string[];
   amenities?: string[];
@@ -112,13 +119,25 @@ export interface UnteraRawListing {
 }
 
 export interface UnteraSearchResponse {
-  success?: boolean;
+  page?: number;
+  page_size?: number;
   count?: number;
   total?: number;
-  page?: number;
-  limit?: number;
+  results?: UnteraRawListing[];
   data?: UnteraRawListing[];
   listings?: UnteraRawListing[];
+  attribution?: {
+    text: string;
+    url: string;
+  };
+}
+
+export interface UnteraSingleListingResponse {
+  listing: UnteraRawListing;
+  attribution?: {
+    text: string;
+    url: string;
+  };
 }
 
 export interface PropertyFilterState {
@@ -131,7 +150,11 @@ export interface PropertyFilterState {
   maxPrice?: number;
   bedrooms?: string;
   bathrooms?: string;
+  minSqm?: number;
+  maxSqm?: number;
   searchQuery?: string;
-  sortBy?: 'featured' | 'price-desc' | 'price-asc' | 'area-desc';
+  sortBy?: 'featured' | 'price-desc' | 'price-asc' | 'area-desc' | string;
   page?: number;
+  pageSize?: number;
 }
+

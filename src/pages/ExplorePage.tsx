@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { GlobeScene } from '@/components/globe/GlobeScene';
 import { PropertyCard } from '@/components/property/PropertyCard';
@@ -8,72 +8,112 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useProperties } from '@/hooks/useProperties';
-import { useDestinations } from '@/hooks/useDestinations';
+import { deriveDestinationClusters } from '@/services/destinationService';
 import { PropertyFilterState } from '@/types/property';
-import { Globe2 } from 'lucide-react';
-
-const INITIAL_FILTER: PropertyFilterState = {
-  country: '',
-  location: '',
-  destinationId: '',
-  propertyType: '',
-  transactionType: '',
-  minPrice: 0,
-  maxPrice: 200000000,
-  bedrooms: '',
-  searchQuery: '',
-  sortBy: 'featured',
-  page: 1
-};
+import { ArrowDown, Loader2 } from 'lucide-react';
 
 export const ExplorePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize filter from URL params
   const [filter, setFilter] = useState<PropertyFilterState>(() => {
-    const loc = searchParams.get('location') || searchParams.get('destination') || '';
-    const q = searchParams.get('q') || '';
     return {
-      ...INITIAL_FILTER,
-      location: loc,
-      destinationId: loc,
-      searchQuery: q
+      country: searchParams.get('country') || '',
+      location: searchParams.get('location') || searchParams.get('destination') || searchParams.get('q') || '',
+      propertyType: searchParams.get('type') || '',
+      transactionType: searchParams.get('transaction') || '',
+      minPrice: searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined,
+      maxPrice: searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined,
+      bedrooms: searchParams.get('bedrooms') || '',
+      searchQuery: searchParams.get('q') || '',
+      sortBy: searchParams.get('sort') || 'featured',
+      page: 1,
+      pageSize: 24
     };
   });
 
   const [activeTab, setActiveTab] = useState<'both' | 'globe' | 'grid'>('both');
 
-  // Query live properties
-  const { properties, loading, error, total, isLive, refetch } = useProperties(filter);
+  // Query live properties from Untera API with pagination support
+  const { 
+    properties, 
+    loading, 
+    loadingMore, 
+    error, 
+    total, 
+    hasMore, 
+    loadMore, 
+    isLive, 
+    refetch 
+  } = useProperties(filter);
 
-  // Derive dynamic destination clusters from properties
-  const { destinations } = useDestinations(properties);
+  // Derive dynamic destination clusters from live property inventory
+  const destinations = useMemo(() => {
+    return deriveDestinationClusters(properties);
+  }, [properties]);
 
-  // Sync searchParams with filter state
+  // Sync URL params when searchParams change (browser back/forward navigation)
   useEffect(() => {
-    const locParam = searchParams.get('location') || searchParams.get('destination');
-    const qParam = searchParams.get('q');
+    const country = searchParams.get('country') || '';
+    const loc = searchParams.get('location') || searchParams.get('destination') || searchParams.get('q') || '';
+    const type = searchParams.get('type') || '';
+    const transaction = searchParams.get('transaction') || '';
+    const sort = searchParams.get('sort') || 'featured';
+    const beds = searchParams.get('bedrooms') || '';
 
     setFilter(prev => ({
       ...prev,
-      location: locParam || '',
-      destinationId: locParam || '',
-      searchQuery: qParam || prev.searchQuery
+      country,
+      location: loc,
+      propertyType: type,
+      transactionType: transaction,
+      sortBy: sort,
+      bedrooms: beds,
+      searchQuery: searchParams.get('q') || loc
     }));
   }, [searchParams]);
 
+  // Handle filter changes and update URL params cleanly
   const handleFilterChange = (newFilter: PropertyFilterState) => {
     setFilter(newFilter);
     const params: Record<string, string> = {};
+    if (newFilter.country) params.country = newFilter.country;
     if (newFilter.location) params.location = newFilter.location;
-    if (newFilter.searchQuery) params.q = newFilter.searchQuery;
+    if (newFilter.propertyType) params.type = newFilter.propertyType;
+    if (newFilter.transactionType) params.transaction = newFilter.transactionType;
+    if (newFilter.bedrooms) params.bedrooms = newFilter.bedrooms;
+    if (newFilter.minPrice) params.minPrice = String(newFilter.minPrice);
+    if (newFilter.maxPrice) params.maxPrice = String(newFilter.maxPrice);
+    if (newFilter.sortBy && newFilter.sortBy !== 'featured') params.sort = newFilter.sortBy;
+    if (newFilter.searchQuery && !newFilter.location) params.q = newFilter.searchQuery;
+
     setSearchParams(params);
   };
 
   const handleReset = () => {
-    setFilter(INITIAL_FILTER);
+    const cleared: PropertyFilterState = {
+      country: '',
+      location: '',
+      destinationId: '',
+      propertyType: '',
+      transactionType: '',
+      minPrice: undefined,
+      maxPrice: undefined,
+      bedrooms: '',
+      searchQuery: '',
+      sortBy: 'featured',
+      page: 1,
+      pageSize: 24
+    };
+    setFilter(cleared);
     setSearchParams({});
   };
 
-  const activeHubName = filter.location || filter.destinationId || null;
+  const activeHubName = filter.country 
+    ? `Country: ${filter.country}` 
+    : filter.location 
+      ? `Territory: ${filter.location}` 
+      : 'Global Exploration';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -84,12 +124,12 @@ export const ExplorePage: React.FC = () => {
             GLOBAL DISCOVERY ENGINE
           </span>
           <h1 className="font-editorial text-4xl sm:text-5xl text-[#f4f2ec] mt-1">
-            {activeHubName ? `Territory: ${activeHubName}` : 'Global Exploration'}
+            {activeHubName}
           </h1>
           <p className="text-xs text-[#8e8d93] mt-1 max-w-xl">
             {isLive
-              ? `Exploring live real estate listings from Untera global MLS across 80+ international territories.`
-              : `Explore exceptional real estate across ${destinations.length} international hubs.`}
+              ? `Streaming live real estate listings from the Untera global MLS across 80+ international territories.`
+              : `Explore exceptional real-estate opportunities worldwide.`}
           </p>
         </div>
 
@@ -140,6 +180,7 @@ export const ExplorePage: React.FC = () => {
                 location: dest.name
               });
             }}
+            showHUD={true}
           />
         </div>
       )}
@@ -156,7 +197,7 @@ export const ExplorePage: React.FC = () => {
 
       {/* Properties Grid with Loading / Error / Empty states */}
       {(activeTab === 'both' || activeTab === 'grid') && (
-        <div>
+        <div className="space-y-10">
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -165,31 +206,54 @@ export const ExplorePage: React.FC = () => {
             </div>
           ) : error && properties.length === 0 ? (
             <ErrorState
-              title="Listing Stream Error"
+              title="ATLAS DATA TEMPORARILY UNAVAILABLE"
               message={error}
               onRetry={refetch}
             />
           ) : properties.length > 0 ? (
-            <div className="space-y-8">
+            <div className="space-y-10">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {properties.map((property) => (
                   <PropertyCard key={property.id} property={property} />
                 ))}
               </div>
 
-              {/* Bottom Attribution */}
-              <div className="pt-8 border-t border-white/[0.06] flex items-center justify-between text-xs text-[#8e8d93]">
+              {/* Load More Pagination */}
+              {hasMore && (
+                <div className="text-center pt-4">
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="px-8 py-3.5 bg-[#111116] hover:bg-[#15151c] text-[#f4f2ec] border border-white/10 hover:border-[#c5a880]/50 font-mono-luxury text-xs uppercase tracking-widest transition-all duration-300 rounded inline-flex items-center gap-2 shadow-lg disabled:opacity-50"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-[#c5a880]" />
+                        <span>Loading Additional Listings...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Load Additional Listings</span>
+                        <ArrowDown className="w-3.5 h-3.5 text-[#c5a880]" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Bottom Attribution & Counter */}
+              <div className="pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#8e8d93]">
                 <UnteraAttribution variant="inline" />
                 <span className="font-mono-luxury text-[11px]">
-                  Showing {properties.length} of {total} Available Listings
+                  Showing {properties.length} of {total} Verified Live Listings
                 </span>
               </div>
             </div>
           ) : (
             <EmptyState
               icon="compass"
-              title="No Matching Assets Found"
-              description="No active listings currently match the specified filters. Try selecting another hub, resetting price bounds, or clearing search keywords."
+              title="No Matching Live Listings Found"
+              description="No active listings currently match the specified filters on the Untera MLS network. Try selecting another country, resetting price bounds, or clearing search keywords."
               actionText="Reset All Filters"
               onAction={handleReset}
             />

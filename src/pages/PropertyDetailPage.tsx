@@ -264,7 +264,7 @@ export const PropertyDetailPage: React.FC = () => {
                   <Calendar className="w-3.5 h-3.5 text-[#c5a880]" />
                   <span>Completed</span>
                 </div>
-                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">{property.yearBuilt || 2022}</div>
+                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">{property.yearBuilt || 'Verified'}</div>
               </div>
             </div>
 

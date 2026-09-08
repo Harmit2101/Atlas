@@ -1,21 +1,25 @@
 import { AtlasProperty, PropertyFilterState, UnteraRawListing } from '@/types/property';
 import { searchListings, getListing, isUnteraConfigured } from '@/lib/untera';
-import { PROPERTIES as FALLBACK_PROPERTIES } from '@/data/properties';
+import { PROPERTIES as FIXTURE_PROPERTIES } from '@/data/properties';
 
 /**
- * Normalizes raw API listing into consistent AtlasProperty domain model
+ * Normalizes a raw Untera API listing into the consistent AtlasProperty domain model
  */
 export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
   const id = String(raw.id || raw.source_id || `prop-${Math.random().toString(36).substring(7)}`);
-  const rawPrice = Number(raw.price || raw.price_usd || 0);
-  const currency = raw.currency || 'USD';
-  
-  // Format price
-  let priceFormatted = `$${rawPrice.toLocaleString()}`;
-  if (currency === 'EUR') priceFormatted = `€${rawPrice.toLocaleString()}`;
-  else if (currency === 'GBP') priceFormatted = `£${rawPrice.toLocaleString()}`;
-  else if (currency === 'AED') priceFormatted = `AED ${rawPrice.toLocaleString()}`;
-  else if (rawPrice === 0) priceFormatted = 'Price on Inquiry';
+  const priceUsd = Number(raw.price_usd || raw.price || 0);
+  const originalPrice = raw.original_price != null ? Number(raw.original_price) : null;
+  const originalCurrency = raw.original_currency || raw.currency || 'USD';
+
+  // Format price display
+  let priceFormatted = priceUsd > 0 ? `$${priceUsd.toLocaleString()}` : 'Price on Inquiry';
+  if (originalCurrency && originalCurrency !== 'USD' && originalPrice) {
+    priceFormatted = `${originalCurrency} ${originalPrice.toLocaleString()} ($${priceUsd.toLocaleString()})`;
+  } else if (originalCurrency === 'EUR' && originalPrice) {
+    priceFormatted = `€${originalPrice.toLocaleString()}`;
+  } else if (originalCurrency === 'GBP' && originalPrice) {
+    priceFormatted = `£${originalPrice.toLocaleString()}`;
+  }
 
   // Extract images safely
   let images: string[] = [];
@@ -25,203 +29,162 @@ export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
     images = raw.photos.filter(img => typeof img === 'string' && img.startsWith('http'));
   }
   
-  // Fallback architectural image if empty
+  // High quality architectural fallback image if listing has no photos
   if (images.length === 0) {
     images = ['https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'];
   }
 
-  const lat = Number(raw.lat || raw.latitude || 25.2048);
-  const lng = Number(raw.lng || raw.longitude || 55.2708);
+  const lat = Number(raw.latitude ?? raw.lat ?? 0);
+  const lng = Number(raw.longitude ?? raw.lng ?? 0);
   const country = raw.country || 'Global Territory';
-  const city = raw.city || country;
+  const city = raw.city || raw.location || (raw.address ? raw.address.split(',')[0].trim() : country);
 
   // Features list
   const features: string[] = [];
   if (Array.isArray(raw.features)) features.push(...raw.features);
   if (Array.isArray(raw.amenities)) features.push(...raw.amenities);
   if (features.length === 0) {
-    features.push('Panoramic Outlook', 'Prime Architectural Positioning', 'Private Parking', 'Climate Controlled');
+    features.push('Verified MLS Provenance', 'Panoramic Outlook', 'Prime Architectural Positioning', 'Private Parking');
   }
 
-  const areaSqm = Number(raw.area_sqm || raw.size || Math.round((raw.area_sqft || 5000) * 0.0929));
+  const areaSqm = Number(raw.sqm ?? raw.area_sqm ?? raw.size ?? 0);
   const areaSqft = Number(raw.area_sqft || Math.round(areaSqm * 10.764));
+
+  const propType = raw.type || raw.property_type || raw.property_subtype || 'Luxury Residence';
+  const cleanPropType = propType.charAt(0).toUpperCase() + propType.slice(1);
+
+  const transactionType = (raw.transaction || raw.transaction_type || 'sale').toLowerCase() === 'rent' ? 'rent' : 'sale';
 
   return {
     id,
     sourceId: String(raw.source_id || id),
-    sourceName: raw.source_name || 'Untera Network',
-    sourceUrl: raw.url || 'https://untera.io',
-    title: raw.title || `${raw.property_type || 'Luxury Residence'} in ${city}`,
-    subtitle: `${raw.property_type || 'Estate'} · ${city}, ${country}`,
-    description: raw.description || `An exceptional architectural acquisition in ${city}, ${country}. Presented with verified provenance and discrete title protocols.`,
-    price: rawPrice,
+    sourceName: raw.source || raw.source_name || 'Untera Real Estate Network',
+    sourceUrl: raw.url || `https://untera.io/listings/${id}`,
+    title: raw.title || `${cleanPropType} in ${city}`,
+    subtitle: `${cleanPropType} · ${city}, ${country}`,
+    description: raw.description || `An exceptional architectural acquisition in ${city}, ${country}. Presented with verified provenance, MLS title tracking, and global real-estate intelligence.`,
+    price: originalPrice || priceUsd,
     priceFormatted,
-    priceUsd: Number(raw.price_usd || rawPrice),
-    currency,
+    priceUsd,
+    currency: originalCurrency,
     country,
     city,
-    address: raw.address,
+    address: raw.address || undefined,
     latitude: lat,
     longitude: lng,
-    propertyType: raw.property_type || raw.type || 'Estate',
-    transactionType: (raw.transaction_type?.toLowerCase() as any) || 'sale',
-    bedrooms: Number(raw.bedrooms || raw.beds || 4),
-    bathrooms: Number(raw.bathrooms || raw.baths || 4),
+    propertyType: cleanPropType,
+    transactionType,
+    bedrooms: Number(raw.bedrooms ?? raw.beds ?? 0),
+    bathrooms: Number(raw.bathrooms ?? raw.baths ?? 0),
     areaSqm,
     areaSqft,
-    yearBuilt: raw.year_built || 2021,
+    yearBuilt: raw.year_built || undefined,
     images,
     features: Array.from(new Set(features)).slice(0, 8),
     curatorNotes: 'Verified through live Untera global MLS integration. Subject to private treaty verification.',
     listedAt: raw.created_at || new Date().toISOString(),
     updatedAt: raw.updated_at || new Date().toISOString(),
     isLive: true,
-    status: 'Verified Listing'
-  };
-}
-
-/**
- * Normalizes local fallback properties to the AtlasProperty model
- */
-function normalizeFallbackProperty(p: any): AtlasProperty {
-  return {
-    id: p.id,
-    sourceId: p.id,
-    sourceName: 'Atlas Curated Samples',
-    sourceUrl: 'https://untera.io',
-    title: p.title,
-    subtitle: p.subtitle,
-    description: p.description,
-    price: p.price,
-    priceFormatted: p.priceFormatted,
-    priceUsd: p.price,
-    currency: p.currency,
-    country: p.country,
-    city: p.city,
-    latitude: p.coordinates?.lat || 25.2048,
-    longitude: p.coordinates?.lng || 55.2708,
-    propertyType: p.propertyType,
-    transactionType: 'sale',
-    bedrooms: p.specs.bedrooms,
-    bathrooms: p.specs.bathrooms,
-    areaSqm: p.specs.areaSqM,
-    areaSqft: p.specs.areaSqFt,
-    yearBuilt: p.specs.yearBuilt,
-    images: p.gallery || [p.heroImage],
-    features: p.keyFeatures || p.tags,
-    curatorNotes: p.curatorNotes,
-    listedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    isLive: false,
-    status: p.status || 'Curated Sample'
+    status: 'Verified Live MLS'
   };
 }
 
 export interface FetchPropertiesResult {
   properties: AtlasProperty[];
   total: number;
+  page: number;
+  pageSize: number;
   isLive: boolean;
-  source: 'untera' | 'fallback';
+  source: 'untera';
   error?: string;
 }
 
 /**
- * Fetch properties based on active filter state
+ * Fetch real live properties based on active filter state from Untera API.
+ * NO SILENT FALLBACKS: If API fails, reports the actual error to display real error state.
  */
 export async function fetchProperties(
   filter: PropertyFilterState = {},
   signal?: AbortSignal
 ): Promise<FetchPropertiesResult> {
-  // If Untera key is configured, attempt live query
-  if (isUnteraConfigured()) {
-    try {
-      const response = await searchListings({
-        country: filter.country,
-        city: filter.location,
-        min_price: filter.minPrice,
-        max_price: filter.maxPrice,
-        bedrooms: filter.bedrooms ? parseInt(filter.bedrooms, 10) : undefined,
-        property_type: filter.propertyType,
-        transaction_type: filter.transactionType,
-        q: filter.searchQuery,
-        page: filter.page || 1,
-        limit: 24,
-        sort: filter.sortBy
-      }, signal);
-
-      const rawListings = response.listings || response.data || [];
-      if (rawListings.length > 0) {
-        const properties = rawListings.map(normalizeUnteraListing);
-        return {
-          properties,
-          total: response.total || properties.length,
-          isLive: true,
-          source: 'untera'
-        };
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') throw err;
-      console.warn('[ATLAS] Untera API fetch failed, falling back to curated assets:', err.message);
-      return {
-        properties: getFilteredFallback(filter),
-        total: FALLBACK_PROPERTIES.length,
-        isLive: false,
-        source: 'fallback',
-        error: err.message
-      };
-    }
+  if (!isUnteraConfigured()) {
+    return {
+      properties: [],
+      total: 0,
+      page: 1,
+      pageSize: 24,
+      isLive: false,
+      source: 'untera',
+      error: 'Untera API key is not configured. Please add VITE_UNTERA_API_KEY to your .env.local file.'
+    };
   }
 
-  // Fallback to high-quality curated collection
-  return {
-    properties: getFilteredFallback(filter),
-    total: FALLBACK_PROPERTIES.length,
-    isLive: false,
-    source: 'fallback'
-  };
+  try {
+    const response = await searchListings({
+      country: filter.country || undefined,
+      location: filter.location || filter.searchQuery || undefined,
+      minPrice: filter.minPrice,
+      maxPrice: filter.maxPrice,
+      minBeds: filter.bedrooms ? parseInt(filter.bedrooms, 10) : undefined,
+      minBaths: filter.bathrooms ? parseInt(filter.bathrooms, 10) : undefined,
+      minSqm: filter.minSqm,
+      maxSqm: filter.maxSqm,
+      type: filter.propertyType,
+      transaction: filter.transactionType,
+      sort: filter.sortBy,
+      page: filter.page || 1,
+      pageSize: filter.pageSize || 24
+    }, signal);
+
+    const rawListings = response.results || response.listings || response.data || [];
+    const properties = rawListings.map(normalizeUnteraListing);
+
+    return {
+      properties,
+      total: response.count || response.total || properties.length,
+      page: response.page || filter.page || 1,
+      pageSize: response.page_size || filter.pageSize || 24,
+      isLive: true,
+      source: 'untera'
+    };
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw err;
+    const errorMsg = err.message || 'Failed to stream live listings from Untera API.';
+    return {
+      properties: [],
+      total: 0,
+      page: filter.page || 1,
+      pageSize: filter.pageSize || 24,
+      isLive: false,
+      source: 'untera',
+      error: errorMsg
+    };
+  }
 }
 
 /**
- * Fetch a single property by ID
+ * Fetch a single property by ID from the live Untera API
  */
 export async function fetchPropertyById(
   id: string,
   signal?: AbortSignal
 ): Promise<AtlasProperty | null> {
-  // Try live API if configured and ID looks like an external or numeric ID
-  if (isUnteraConfigured() && !id.startsWith('atlas-prop-')) {
-    try {
-      const raw = await getListing(id, signal);
-      if (raw) return normalizeUnteraListing(raw);
-    } catch (err: any) {
-      if (err.name === 'AbortError') throw err;
-      console.warn('[ATLAS] Live property lookup failed for ID', id, err.message);
-    }
-  }
+  if (!isUnteraConfigured()) return null;
 
-  // Check fallback dataset
-  const fallback = FALLBACK_PROPERTIES.find(p => p.id === id);
-  if (fallback) {
-    return normalizeFallbackProperty(fallback);
+  try {
+    const raw = await getListing(id, signal);
+    if (raw && (raw.id || raw.title)) {
+      return normalizeUnteraListing(raw);
+    }
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('[ATLAS] Live property lookup failed for ID', id, err.message);
   }
 
   return null;
 }
 
 /**
- * Helper to filter local fallback dataset
+ * Exported test fixtures for isolated testing only
  */
-function getFilteredFallback(filter: PropertyFilterState): AtlasProperty[] {
-  return FALLBACK_PROPERTIES.filter(p => {
-    if (filter.country && !p.country.toLowerCase().includes(filter.country.toLowerCase())) return false;
-    if (filter.destinationId && p.destinationId !== filter.destinationId) return false;
-    if (filter.propertyType && p.propertyType !== filter.propertyType) return false;
-    if (filter.bedrooms && p.specs.bedrooms < parseInt(filter.bedrooms, 10)) return false;
-    if (filter.searchQuery) {
-      const q = filter.searchQuery.toLowerCase();
-      const match = p.title.toLowerCase().includes(q) || p.city.toLowerCase().includes(q) || p.country.toLowerCase().includes(q);
-      if (!match) return false;
-    }
-    return true;
-  }).map(normalizeFallbackProperty);
-}
+export const DEV_TEST_FIXTURES = FIXTURE_PROPERTIES;

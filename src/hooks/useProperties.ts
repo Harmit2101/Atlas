@@ -5,31 +5,52 @@ import { fetchProperties } from '@/services/propertyService';
 export function useProperties(filter: PropertyFilterState = {}) {
   const [properties, setProperties] = useState<AtlasProperty[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(0);
+  const [page, setPage] = useState<number>(filter.page || 1);
   const [isLive, setIsLive] = useState<boolean>(false);
-  const [source, setSource] = useState<'untera' | 'fallback'>('fallback');
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const filterRef = useRef(filter);
   filterRef.current = filter;
 
-  const loadProperties = useCallback(async () => {
+  const loadProperties = useCallback(async (isLoadMore: boolean = false) => {
     // Cancel previous inflight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
 
-    setLoading(true);
-    setError(null);
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setError(null);
+    }
+
+    const targetPage = isLoadMore ? page + 1 : 1;
 
     try {
-      const result = await fetchProperties(filterRef.current, abortControllerRef.current.signal);
-      setProperties(result.properties);
+      const result = await fetchProperties(
+        {
+          ...filterRef.current,
+          page: targetPage,
+          pageSize: filterRef.current.pageSize || 24
+        },
+        abortControllerRef.current.signal
+      );
+
+      if (isLoadMore) {
+        setProperties(prev => [...prev, ...result.properties]);
+        setPage(targetPage);
+      } else {
+        setProperties(result.properties);
+        setPage(1);
+      }
+
       setTotal(result.total);
       setIsLive(result.isLive);
-      setSource(result.source);
       if (result.error) {
         setError(result.error);
       }
@@ -39,14 +60,15 @@ export function useProperties(filter: PropertyFilterState = {}) {
       setError(err.message || 'Failed to retrieve live listings.');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, []);
+  }, [page]);
 
   // Debounce search/filter changes
   useEffect(() => {
     const handler = setTimeout(() => {
-      loadProperties();
-    }, filter.searchQuery ? 400 : 50);
+      loadProperties(false);
+    }, filter.searchQuery ? 350 : 50);
 
     return () => {
       clearTimeout(handler);
@@ -63,19 +85,32 @@ export function useProperties(filter: PropertyFilterState = {}) {
     filter.minPrice,
     filter.maxPrice,
     filter.bedrooms,
+    filter.bathrooms,
+    filter.minSqm,
+    filter.maxSqm,
     filter.searchQuery,
     filter.sortBy,
-    filter.page,
-    loadProperties
+    filter.page
   ]);
+
+  const loadMore = useCallback(async () => {
+    if (!loading && !loadingMore && properties.length < total) {
+      await loadProperties(true);
+    }
+  }, [loading, loadingMore, properties.length, total, loadProperties]);
+
+  const hasMore = properties.length < total && properties.length > 0;
 
   return {
     properties,
     loading,
+    loadingMore,
     error,
     total,
+    page,
+    hasMore,
+    loadMore,
     isLive,
-    source,
-    refetch: loadProperties
+    refetch: () => loadProperties(false)
   };
 }

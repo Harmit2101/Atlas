@@ -14,17 +14,51 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AtlasProperty[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 50);
+      setSelectedIndex(-1);
     } else {
       setQuery('');
       setResults([]);
+      setSelectedIndex(-1);
     }
   }, [isOpen]);
+
+  // Handle keyboard navigation (ArrowUp, ArrowDown, Enter, Escape)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex(prev => (prev < results.length - 1 ? prev + 1 : 0));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex(prev => (prev > 0 ? prev - 1 : results.length - 1));
+      } else if (e.key === 'Enter') {
+        if (selectedIndex >= 0 && selectedIndex < results.length) {
+          e.preventDefault();
+          const target = results[selectedIndex];
+          onClose();
+          navigate(`/property/${target.id}`);
+        } else if (query.trim()) {
+          e.preventDefault();
+          onClose();
+          navigate(`/explore?location=${encodeURIComponent(query.trim())}`);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, selectedIndex, results, query, onClose, navigate]);
 
   // Debounced live search
   useEffect(() => {
@@ -134,14 +168,18 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
               </div>
               {results.length > 0 ? (
                 <div className="space-y-1.5">
-                  {results.map(prop => (
+                  {results.map((prop, idx) => (
                     <button
                       key={prop.id}
                       onClick={() => {
                         onClose();
                         navigate(`/property/${prop.id}`);
                       }}
-                      className="w-full flex items-center justify-between p-2.5 rounded bg-white/[0.03] hover:bg-[#c5a880]/10 border border-transparent hover:border-[#c5a880]/30 text-left transition-all"
+                      className={`w-full flex items-center justify-between p-2.5 rounded text-left transition-all ${
+                        selectedIndex === idx
+                          ? 'bg-[#c5a880]/20 border border-[#c5a880]'
+                          : 'bg-white/[0.03] hover:bg-[#c5a880]/10 border border-transparent hover:border-[#c5a880]/30'
+                      }`}
                     >
                       <div className="flex items-center gap-3">
                         <img 
