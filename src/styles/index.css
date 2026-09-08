@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-main: #08080a;
+    --bg-card: #111116;
+    --bg-card-hover: #17171f;
+    --text-main: #f4f2ec;
+    --text-muted: #8e8d93;
+    --text-dim: #5c5b62;
+    --gold: #c5a880;
+    --gold-bright: #e2c295;
+    --gold-glow: rgba(197, 168, 128, 0.15);
+    --border-subtle: rgba(255, 255, 255, 0.07);
+    --border-gold: rgba(197, 168, 128, 0.25);
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, .font-editorial {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+  }
+
+  .font-mono-luxury {
+    font-family: 'Space Grotesk', monospace;
+  }
+}
+
+/* Custom Editorial Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #08080a;
+}
+::-webkit-scrollbar-thumb {
+  background: #23222a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c5a880;
+}
+
+/* Luxury Grain & Vignette Effect */
+.bg-vignette {
+  background: radial-gradient(circle at center, transparent 30%, rgba(8, 8, 10, 0.85) 90%);
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #f4f2ec 0%, #e2c295 50%, #c5a880 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-subtle-gradient {
+  background: linear-gradient(180deg, rgba(197, 168, 128, 0.08) 0%, rgba(197, 168, 128, 0.02) 100%);
+}
+
+.luxury-card {
+  background-color: #111116;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.luxury-card:hover {
+  border-color: rgba(197, 168, 128, 0.35);
+  background-color: #15151c;
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
