@@ -77,27 +77,26 @@ export const MarketsPage: React.FC = () => {
 
       {/* Split Layout: 3D Cartography (Left) + Market Index (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Interactive 3D Globe with active country clusters */}
-        <div className="lg:col-span-5 sticky top-24 space-y-4">
-          <div className="p-4 rounded border border-white/10 bg-[#0c0c10]/70 backdrop-blur-md">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06] mb-3 text-xs font-mono-luxury text-[#8e8d93]">
-              <span className="uppercase tracking-widest text-[#c5a880] flex items-center gap-1.5">
-                <Compass className="w-3.5 h-3.5" />
-                <span>ACTIVE JURISDICTIONS</span>
-              </span>
-              <span>{destinations.length} Hubs Plotted</span>
-            </div>
+        {/* Left Column: Seamless Interactive 3D Globe */}
+        <div className="lg:col-span-5 sticky top-24 space-y-2">
+          <div className="flex items-center justify-between px-2 pb-1 text-xs font-mono-luxury text-[#8e8d93]">
+            <span className="uppercase tracking-widest text-[#c5a880] flex items-center gap-1.5">
+              <Compass className="w-3.5 h-3.5" />
+              <span>ACTIVE JURISDICTIONS</span>
+            </span>
+            <span>{destinations.length} Hubs Plotted</span>
+          </div>
 
-            <div className="w-full h-[420px] sm:h-[500px]">
-              <GlobeScene
-                height="h-full"
-                destinations={destinations}
-                onDestinationSelect={(dest) => {
-                  navigate(`/explore?location=${encodeURIComponent(dest.name)}`);
-                }}
-                showHUD={true}
-              />
-            </div>
+          <div className="w-full h-[460px] sm:h-[520px] relative">
+            <GlobeScene
+              height="h-full"
+              destinations={destinations}
+              onDestinationSelect={(dest) => {
+                navigate(`/explore?location=${encodeURIComponent(dest.name)}`);
+              }}
+              showHUD={false}
+            />
+          </div>
 
             {selectedCountry && (
               <div className="mt-4 p-3 rounded bg-[#111116] border border-[#c5a880]/30 text-xs flex items-center justify-between">
@@ -118,7 +117,6 @@ export const MarketsPage: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
 
         {/* Right Column: Market Score Table & Cards */}
         <div className="lg:col-span-7 space-y-6">

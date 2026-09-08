@@ -5,8 +5,8 @@ interface AtmosphereProps {
   radius?: number;
 }
 
-export const Atmosphere: React.FC<AtmosphereProps> = ({ radius = 2.05 }) => {
-  // Custom subtle Fresnel atmosphere shader
+export const Atmosphere: React.FC<AtmosphereProps> = ({ radius = 1.55 }) => {
+  // Ultra-subtle limb halo that strictly decays to 0 at the horizon and stays well within viewport
   const atmosphereMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
       vertexShader: `
@@ -19,11 +19,11 @@ export const Atmosphere: React.FC<AtmosphereProps> = ({ radius = 2.05 }) => {
       fragmentShader: `
         varying vec3 vNormal;
         void main() {
-          // Fresnel rim effect
-          float intensity = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.2);
-          // Subtle warm champagne gold rim glow
-          vec3 atmosphereColor = vec3(0.77, 0.66, 0.50);
-          gl_FragColor = vec4(atmosphereColor, intensity * 0.45);
+          float viewDot = dot(vNormal, vec3(0.0, 0.0, 1.0));
+          // Peaks strictly at the tangential limb
+          float intensity = pow(clamp(1.0 - abs(viewDot), 0.0, 1.0), 3.8);
+          vec3 rimColor = mix(vec3(0.28, 0.44, 0.65), vec3(0.77, 0.66, 0.50), 0.35);
+          gl_FragColor = vec4(rimColor, intensity * 0.35);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -35,7 +35,7 @@ export const Atmosphere: React.FC<AtmosphereProps> = ({ radius = 2.05 }) => {
 
   return (
     <mesh material={atmosphereMaterial}>
-      <sphereGeometry args={[radius * 1.15, 48, 48]} />
+      <sphereGeometry args={[radius * 1.025, 48, 48]} />
     </mesh>
   );
 };

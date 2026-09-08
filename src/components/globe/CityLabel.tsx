@@ -5,15 +5,21 @@ import { Destination } from '@/types/destination';
 interface CityLabelProps {
   destination: Destination;
   visible: boolean;
+  isSelected?: boolean;
   onClick: () => void;
 }
 
-export const CityLabel: React.FC<CityLabelProps> = ({ destination, visible, onClick }) => {
+export const CityLabel: React.FC<CityLabelProps> = ({ 
+  destination, 
+  visible, 
+  isSelected = false,
+  onClick 
+}) => {
   if (!visible) return null;
 
   return (
     <Html
-      position={[0, 0.18, 0]}
+      position={[0, isSelected ? 0.26 : 0.18, 0]}
       center
       distanceFactor={8}
       zIndexRange={[100, 0]}
@@ -30,20 +36,29 @@ export const CityLabel: React.FC<CityLabelProps> = ({ destination, visible, onCl
           e.stopPropagation();
           onClick();
         }}
-        className="cursor-pointer group flex flex-col items-center bg-[#0c0c10]/95 backdrop-blur-md border border-[#c5a880]/40 rounded px-3.5 py-2 shadow-2xl min-w-[140px] text-center hover:border-[#c5a880] transition-colors"
+        className={`cursor-pointer group flex flex-col items-center bg-[#08080a]/95 backdrop-blur-md border rounded px-3 py-2 shadow-2xl min-w-[130px] text-center transition-all ${
+          isSelected 
+            ? 'border-[#c5a880] ring-1 ring-[#c5a880]/30 shadow-[#c5a880]/10' 
+            : 'border-white/10 hover:border-[#c5a880]/50'
+        }`}
       >
-        <div className="text-[9px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
-          {destination.country}
+        <div className="flex items-center gap-1.5 text-[8px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#c5a880] animate-pulse" />
+          <span>{isSelected ? 'ACTIVE ASSET LOCATION' : destination.country}</span>
         </div>
-        <div className="text-xs font-medium text-[#f4f2ec] tracking-wide mt-0.5 group-hover:text-[#e2c295] transition-colors">
+        
+        <div className="text-xs font-editorial text-[#f4f2ec] tracking-wide mt-0.5 group-hover:text-[#e2c295] transition-colors">
           {destination.name}
         </div>
-        <div className="flex items-center gap-1.5 mt-1 text-[10px] text-[#8e8d93]">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#c5a880] animate-pulse" />
-          <span>{destination.propertyCount} Exclusive Assets</span>
-        </div>
-        <div className="mt-1.5 text-[8px] uppercase tracking-wider text-[#c5a880]/80 group-hover:text-[#f4f2ec] transition-colors">
-          Click to Discover →
+
+        {destination.propertyCount > 0 && (
+          <div className="mt-1 text-[9px] font-mono-luxury text-[#8e8d93]">
+            {destination.propertyCount} {destination.propertyCount === 1 ? 'Live Listing' : 'Live Listings'}
+          </div>
+        )}
+
+        <div className="mt-1 text-[8px] uppercase tracking-wider text-[#c5a880]/90 group-hover:text-[#f4f2ec] transition-colors">
+          {isSelected ? 'View Portfolio →' : 'Explore Location →'}
         </div>
       </div>
     </Html>

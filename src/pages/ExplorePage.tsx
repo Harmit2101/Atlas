@@ -10,7 +10,7 @@ import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useProperties } from '@/hooks/useProperties';
 import { deriveDestinationClusters } from '@/services/destinationService';
 import { PropertyFilterState } from '@/types/property';
-import { ArrowDown, Loader2 } from 'lucide-react';
+import { ArrowDown, Loader2, Compass } from 'lucide-react';
 
 export const ExplorePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -166,22 +166,32 @@ export const ExplorePage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3D Globe Section (Seamless - no card box) */}
+      {/* 3D Globe Section (Seamlessly floating planetary view) */}
       {(activeTab === 'both' || activeTab === 'globe') && (
-        <div className="relative w-full rounded-sm overflow-hidden bg-transparent">
-          <GlobeScene
-            height={activeTab === 'globe' ? 'h-[720px]' : 'h-[440px] sm:h-[500px]'}
-            destinations={destinations}
-            selectedDestinationId={filter.destinationId}
-            onDestinationSelect={(dest) => {
-              handleFilterChange({
-                ...filter,
-                destinationId: dest.name,
-                location: dest.name
-              });
-            }}
-            showHUD={true}
-          />
+        <div className="relative w-full space-y-2 py-2">
+          <div className="flex items-center justify-between px-2 text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93]">
+            <span className="flex items-center gap-1.5 text-[#c5a880]">
+              <Compass className="w-3.5 h-3.5" />
+              <span>GLOBAL ASSET CARTOGRAPHY · REAL EARTH</span>
+            </span>
+            <span>{destinations.length} Active Hubs</span>
+          </div>
+
+          <div className="relative w-full bg-transparent overflow-visible">
+            <GlobeScene
+              height={activeTab === 'globe' ? 'h-[600px] sm:h-[700px]' : 'h-[360px] sm:h-[440px]'}
+              destinations={destinations}
+              selectedDestinationId={filter.destinationId || filter.location}
+              onDestinationSelect={(dest) => {
+                handleFilterChange({
+                  ...filter,
+                  destinationId: dest.name,
+                  location: dest.name
+                });
+              }}
+              showHUD={false}
+            />
+          </div>
         </div>
       )}
 

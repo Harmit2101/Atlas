@@ -8,6 +8,7 @@ interface CityMarkerProps {
   destination: Destination;
   globeRadius: number;
   isHovered: boolean;
+  isSelected?: boolean;
   onHover: (id: string | null) => void;
   onSelect: (destination: Destination) => void;
 }
@@ -26,14 +27,17 @@ export const CityMarker: React.FC<CityMarkerProps> = ({
   destination,
   globeRadius,
   isHovered,
+  isSelected = false,
   onHover,
   onSelect
 }) => {
   const markerGroupRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const outerPulseRef = useRef<THREE.Mesh>(null);
+  const timeRef = useRef<number>(0);
   const [internalHover, setInternalHover] = useState(false);
 
-  const active = isHovered || internalHover;
+  const active = isHovered || internalHover || isSelected;
 
   // Calculate position and normal orientation
   const position = useMemo(() => {
@@ -44,14 +48,27 @@ export const CityMarker: React.FC<CityMarkerProps> = ({
     return position.clone().multiplyScalar(1.2);
   }, [position]);
 
-  // Subtle pulsing animation on the outer marker ring
-  useFrame(({ clock }) => {
+  // Subtle pulsing animation on marker rings (NO THREE.Clock deprecation)
+  useFrame((_, delta) => {
+    timeRef.current += delta;
+    const time = timeRef.current;
+
     if (ringRef.current) {
-      const time = clock.getElapsedTime();
-      const scale = active 
-        ? 1.4 + Math.sin(time * 4) * 0.25 
-        : 1.0 + Math.sin(time * 2 + destination.latitude) * 0.15;
+      const scale = isSelected
+        ? 1.5 + Math.sin(time * 5) * 0.3
+        : active 
+        ? 1.35 + Math.sin(time * 4) * 0.2 
+        : 1.0 + Math.sin(time * 2.2 + destination.latitude) * 0.12;
       ringRef.current.scale.set(scale, scale, scale);
+    }
+
+    if (outerPulseRef.current && (isSelected || active)) {
+      const pulseProgress = (time * 1.5) % 1.0;
+      const pulseScale = 1.0 + pulseProgress * 1.8;
+      outerPulseRef.current.scale.set(pulseScale, pulseScale, pulseScale);
+      if (outerPulseRef.current.material instanceof THREE.Material) {
+        outerPulseRef.current.material.opacity = (1.0 - pulseProgress) * 0.6;
+      }
     }
   });
 
@@ -77,47 +94,61 @@ export const CityMarker: React.FC<CityMarkerProps> = ({
     >
       {/* Align normal to point outward from globe center */}
       <group onUpdate={(self) => self.lookAt(lookAtTarget)}>
-        {/* Central Core Dot */}
+        {/* Central Radiant Core Dot */}
         <mesh>
-          <circleGeometry args={[active ? 0.045 : 0.03, 16]} />
+          <circleGeometry args={[isSelected ? 0.048 : active ? 0.040 : 0.026, 20]} />
           <meshBasicMaterial 
-            color={active ? '#f4f2ec' : '#c5a880'} 
+            color={isSelected ? '#ffffff' : active ? '#f4f2ec' : '#c5a880'} 
             toneMapped={false}
             side={THREE.DoubleSide}
           />
         </mesh>
 
-        {/* Outer Glow Ring */}
+        {/* Primary Glow Ring */}
         <mesh ref={ringRef}>
-          <ringGeometry args={[0.04, 0.06, 24]} />
+          <ringGeometry args={[0.035, 0.052, 24]} />
           <meshBasicMaterial 
-            color="#e2c295" 
+            color={isSelected ? '#e2c295' : '#c5a880'} 
             transparent 
-            opacity={active ? 0.9 : 0.45} 
+            opacity={isSelected ? 0.95 : active ? 0.85 : 0.40} 
             side={THREE.DoubleSide} 
           />
         </mesh>
 
-        {/* Vertical beacon line projecting outward */}
+        {/* Expanding Outer Radar Ring on active/selected */}
+        {(isSelected || active) && (
+          <mesh ref={outerPulseRef}>
+            <ringGeometry args={[0.055, 0.068, 24]} />
+            <meshBasicMaterial 
+              color="#c5a880" 
+              transparent 
+              opacity={0.5} 
+              side={THREE.DoubleSide} 
+            />
+          </mesh>
+        )}
+
+        {/* Vertical beacon line projecting outward from planet */}
         <line>
           <bufferGeometry>
             <bufferAttribute
               attach="attributes-position"
-              args={[new Float32Array([0, 0, 0, 0, 0, active ? 0.18 : 0.08]), 3]}
+              args={[new Float32Array([0, 0, 0, 0, 0, isSelected ? 0.24 : active ? 0.16 : 0.07]), 3]}
             />
           </bufferGeometry>
           <lineBasicMaterial 
-            color="#c5a880" 
+            color={isSelected ? '#ffffff' : '#c5a880'} 
             transparent 
-            opacity={active ? 0.8 : 0.35} 
+            opacity={isSelected ? 0.95 : active ? 0.80 : 0.30} 
           />
         </line>
       </group>
 
-      {/* 3D HTML Billboard Label on hover */}
+      {/* 3D HTML Billboard Label on hover or selected */}
       <CityLabel 
         destination={destination} 
         visible={active} 
+        isSelected={isSelected}
         onClick={() => onSelect(destination)} 
       />
     </group>

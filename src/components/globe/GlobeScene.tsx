@@ -1,13 +1,13 @@
 import React, { Suspense, useState, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { useNavigate } from 'react-router-dom';
 import { DestinationCluster } from '@/types/destination';
 import { DESTINATIONS as STATIC_DESTINATIONS } from '@/data/destinations';
 import { Globe } from './Globe';
+import { CelestialStars } from './CelestialStars';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { Compass, Globe2 } from 'lucide-react';
-import { GlobeLoader } from '@/components/ui/LoadingSkeleton';
 
 interface GlobeSceneProps {
   className?: string;
@@ -20,7 +20,7 @@ interface GlobeSceneProps {
 
 export const GlobeScene: React.FC<GlobeSceneProps> = ({
   className = '',
-  height = 'h-[540px] md:h-[680px]',
+  height = 'h-[500px] md:h-[640px]',
   destinations: propDestinations,
   selectedDestinationId,
   onDestinationSelect,
@@ -38,8 +38,21 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
     return STATIC_DESTINATIONS;
   }, [propDestinations]);
 
-  const initialSelected = destinations.find(d => d.id === selectedDestinationId) || null;
+  const initialSelected = destinations.find(d => 
+    d.id === selectedDestinationId || d.name.toLowerCase() === selectedDestinationId?.toLowerCase()
+  ) || null;
+
   const [selectedCity, setSelectedCity] = useState<DestinationCluster | null>(initialSelected);
+
+  // Synchronize when selectedDestinationId prop updates from URL
+  React.useEffect(() => {
+    if (selectedDestinationId) {
+      const match = destinations.find(d => 
+        d.id === selectedDestinationId || d.name.toLowerCase() === selectedDestinationId.toLowerCase()
+      );
+      if (match) setSelectedCity(match);
+    }
+  }, [selectedDestinationId, destinations]);
 
   const handleCitySelect = (dest: DestinationCluster) => {
     setSelectedCity(dest);
@@ -59,14 +72,14 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
   }, [destinations]);
 
   return (
-    <div className={`relative w-full ${height} select-none ${className}`}>
+    <div className={`relative w-full ${height} select-none bg-transparent overflow-visible ${className}`}>
       {/* Accessible 2D Fallback for Reduced Motion */}
       {prefersReducedMotion ? (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center">
-          <Globe2 className="w-12 h-12 text-[#c5a880] mb-4" />
-          <h3 className="text-xl font-editorial text-[#f4f2ec] mb-2">Global Discovery Directory</h3>
+          <Globe2 className="w-10 h-10 text-[#c5a880] mb-3" />
+          <h3 className="text-lg font-editorial text-[#f4f2ec] mb-1">Global Property Discovery</h3>
           <p className="text-xs text-[#8e8d93] max-w-md mb-6">
-            Explore premier financial capitals and coastal enclaves across the globe.
+            Live geographic inventory streaming from verified international MLS syndicates.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl w-full">
             {destinations.slice(0, 8).map((dest) => (
@@ -83,29 +96,32 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
           </div>
         </div>
       ) : (
-        /* Transparent Seamless Canvas without enclosing box or container border */
+        /* Transparent Seamless WebGL Canvas - Floats directly on page without rectangular container */
         <Canvas
-          camera={{ position: [0, 0, 5.2], fov: 42 }}
+          camera={{ position: [0, 0, 5.8], fov: 36 }}
           dpr={[1, 1.5]}
           gl={{ 
             antialias: true, 
             alpha: true, 
             powerPreference: 'high-performance' 
           }}
+          onCreated={({ gl }) => {
+            gl.setClearColor(0x000000, 0);
+          }}
           className="w-full h-full cursor-grab active:cursor-grabbing bg-transparent"
         >
-          {/* Restrained cinematic lighting */}
-          <ambientLight intensity={0.4} />
-          <directionalLight position={[10, 8, 5]} intensity={1.8} color="#fbf7ee" />
-          <pointLight position={[-10, -5, -10]} intensity={0.6} color="#c5a880" />
+          {/* Subtle cinematic lighting */}
+          <ambientLight intensity={0.45} />
+          <directionalLight position={[10, 8, 6]} intensity={1.6} color="#ffffff" />
+          <pointLight position={[-10, -5, -8]} intensity={0.4} color="#6580a5" />
 
-          {/* Subtle celestial dust */}
-          <Stars radius={40} depth={20} count={900} factor={2.5} saturation={0} fade speed={0.4} />
+          {/* Restrained celestial starfield */}
+          <CelestialStars radius={45} depth={25} count={500} speed={0.2} />
 
           <Suspense fallback={null}>
             <Globe
               destinations={destinations}
-              globeRadius={1.9}
+              globeRadius={1.55}
               hoveredCityId={hoveredCityId}
               selectedCity={selectedCity}
               onHoverCity={setHoveredCityId}
@@ -117,41 +133,41 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
           <OrbitControls
             enableZoom={false}
             enablePan={false}
-            rotateSpeed={0.5}
+            rotateSpeed={0.45}
             dampingFactor={0.08}
-            minPolarAngle={Math.PI / 3}
-            maxPolarAngle={(2 * Math.PI) / 3}
+            minPolarAngle={Math.PI / 3.2}
+            maxPolarAngle={(2.2 * Math.PI) / 3.2}
           />
         </Canvas>
       )}
 
-      {/* Luxury Telemetry HUD Overlay */}
+      {/* Minimalist Telemetry HUD */}
       {showHUD && (
-        <div className="absolute top-6 left-6 z-20 pointer-events-none hidden sm:flex flex-col gap-1.5">
-          <div className="flex items-center gap-2 text-[10px] font-mono-luxury tracking-widest uppercase text-[#c5a880]">
-            <Compass className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '14s' }} />
-            <span>GLOBAL ASSET INTELLIGENCE · LAT/LON GRID</span>
+        <div className="absolute top-4 left-4 z-20 pointer-events-none hidden sm:flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 text-[9px] font-mono-luxury tracking-widest uppercase text-[#c5a880]">
+            <Compass className="w-3 h-3 text-[#c5a880]" />
+            <span>GLOBAL ASSET CARTOGRAPHY</span>
           </div>
           {activeCity ? (
-            <div className="flex flex-col border-l border-[#c5a880]/40 pl-3 mt-1 backdrop-blur-sm">
-              <span className="text-xs uppercase text-[#8e8d93]">{activeCity.country}</span>
-              <span className="text-base font-editorial text-[#f4f2ec] tracking-wide">{activeCity.name}</span>
-              <span className="text-[11px] font-mono-luxury text-[#c5a880]">
-                {activeCity.coordinatesFormatted} · {activeCity.propertyCount} OPPORTUNITIES
+            <div className="flex flex-col border-l border-[#c5a880]/40 pl-2.5 mt-0.5 backdrop-blur-sm">
+              <span className="text-[10px] uppercase text-[#8e8d93]">{activeCity.country}</span>
+              <span className="text-sm font-editorial text-[#f4f2ec] tracking-wide">{activeCity.name}</span>
+              <span className="text-[10px] font-mono-luxury text-[#c5a880]">
+                {activeCity.propertyCount > 0 ? `${activeCity.propertyCount} LIVE ASSETS` : 'ACTIVE MARKET'}
               </span>
             </div>
           ) : (
-            <div className="text-[11px] font-mono-luxury text-[#8e8d93] border-l border-white/10 pl-3">
-              ORBIT TO EXPLORE · {destinations.length} HUBS · {totalListed} ASSETS TOTAL
+            <div className="text-[10px] font-mono-luxury text-[#8e8d93]/80 border-l border-white/10 pl-2">
+              {destinations.length} JURISDICTIONS · {totalListed} LIVE ASSETS
             </div>
           )}
         </div>
       )}
 
-      {/* Bottom helper badge */}
-      <div className="absolute bottom-6 right-6 z-20 pointer-events-none text-right hidden sm:block">
-        <span className="text-[10px] uppercase font-mono-luxury tracking-widest text-[#8e8d93] bg-[#0c0c10]/60 backdrop-blur-sm border border-white/10 px-2.5 py-1 rounded">
-          Drag to Rotate Globe · Select Hub to Explore
+      {/* Minimalist Floating Helper Indicator */}
+      <div className="absolute bottom-4 right-4 z-20 pointer-events-none text-right hidden sm:block">
+        <span className="text-[9px] uppercase font-mono-luxury tracking-widest text-[#8e8d93] bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/5">
+          Drag to Orbit · Select to Filter
         </span>
       </div>
     </div>
