@@ -84,7 +84,7 @@ export const LandingPage: React.FC = () => {
                 <div className="grid grid-cols-3 gap-6">
                   <div>
                     <div className="text-2xl font-editorial text-[#f4f2ec]">
-                      {stats?.countries || destinations.length || 86}
+                      {stats?.countries ? stats.countries : '—'}
                     </div>
                     <div className="text-[10px] font-mono-luxury uppercase text-[#8e8d93] tracking-widest mt-0.5">
                       Countries Tracked
@@ -92,7 +92,7 @@ export const LandingPage: React.FC = () => {
                   </div>
                   <div>
                     <div className="text-2xl font-editorial text-[#c5a880]">
-                      {stats?.listings ? `${(stats.listings / 1000000).toFixed(1)}M+` : '3.9M+'}
+                      {stats?.listings ? `${(stats.listings / 1000000).toFixed(1)}M+` : '—'}
                     </div>
                     <div className="text-[10px] font-mono-luxury uppercase text-[#8e8d93] tracking-widest mt-0.5">
                       Live MLS Listings
@@ -100,7 +100,7 @@ export const LandingPage: React.FC = () => {
                   </div>
                   <div>
                     <div className="text-2xl font-editorial text-[#f4f2ec]">
-                      {stats?.sources || 236}
+                      {stats?.sources ? stats.sources : '—'}
                     </div>
                     <div className="text-[10px] font-mono-luxury uppercase text-[#8e8d93] tracking-widest mt-0.5">
                       MLS Syndicates

@@ -1,17 +1,13 @@
 import { UnteraRawListing, UnteraSearchResponse, UnteraSingleListingResponse } from '@/types/property';
 import { MarketScoresResponse, UnteraStats, UnteraSourcesResponse } from '@/types/market';
 
-const UNTERA_BASE_URL = 'https://api.untera.io/api/v1';
+const UNTERA_BASE_URL = '/api/untera';
 
-// Read API Key securely from environment
-const getApiKey = (): string | undefined => {
-  return import.meta.env.VITE_UNTERA_API_KEY;
-};
-
-export const isUnteraConfigured = (): boolean => {
-  const key = getApiKey();
-  return Boolean(key && !key.includes('your_untera_api_key'));
-};
+/**
+ * Indicates if the Untera service integration is enabled.
+ * The API key is securely held server-side and never exposed to the client.
+ */
+export const isUnteraConfigured = (): boolean => true;
 
 // In-memory cache with 15-minute TTL to shield free-tier quota (1,000 req/day)
 interface CacheEntry<T> {
@@ -40,18 +36,14 @@ function recordRequest(): void {
 }
 
 /**
- * Low-level authenticated fetch to Untera API with cache and rate-limit safeguards.
+ * Low-level authenticated fetch to Atlas Untera proxy with cache and rate-limit safeguards.
+ * Never connects directly to api.untera.io or exposes API keys in the browser.
  */
 async function unteraFetch<T>(
   endpoint: string,
   params: Record<string, any> = {},
   signal?: AbortSignal
 ): Promise<T> {
-  const apiKey = getApiKey();
-  if (!apiKey || !isUnteraConfigured()) {
-    throw new Error('UNTERA_API_KEY_NOT_CONFIGURED');
-  }
-
   // Construct cache key from endpoint and sorted params
   const sortedQuery = Object.keys(params)
     .sort()
@@ -83,21 +75,32 @@ async function unteraFetch<T>(
   const response = await fetch(url, {
     method: 'GET',
     headers: {
-      'Accept': 'application/json',
-      'X-API-Key': apiKey
+      'Accept': 'application/json'
     },
     signal
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
+    let errBody: any = null;
+    try {
+      errBody = await response.json();
+    } catch {
+      // Fallback if not JSON
+    }
+
     if (response.status === 429) {
       throw new Error('RATE_LIMIT_EXCEEDED');
     }
     if (response.status === 401 || response.status === 403) {
-      throw new Error('UNAUTHORIZED_API_KEY');
+      throw new Error(errBody?.message || 'UNAUTHORIZED_API_KEY');
     }
-    throw new Error(`UNTERA_API_ERROR_${response.status}: ${errorText.slice(0, 100)}`);
+    if (response.status === 503) {
+      throw new Error(errBody?.message || 'UNTERA_API_KEY_NOT_CONFIGURED');
+    }
+    if (response.status === 502) {
+      throw new Error(errBody?.message || 'UPSTREAM_GATEWAY_ERROR');
+    }
+    throw new Error(errBody?.message || `UNTERA_API_ERROR_${response.status}`);
   }
 
   const data = await response.json();

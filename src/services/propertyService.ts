@@ -115,7 +115,7 @@ export async function fetchProperties(
       pageSize: 24,
       isLive: false,
       source: 'untera',
-      error: 'Untera API key is not configured. Please add VITE_UNTERA_API_KEY to your .env.local file.'
+      error: 'Untera API service is not configured. Please configure UNTERA_API_KEY in server environment.'
     };
   }
 
