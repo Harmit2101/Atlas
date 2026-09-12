@@ -34,11 +34,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { data } = await supabase.auth.getSession();
           if (mounted) {
             if (data.session?.user) {
+              let role: any = 'buyer';
+              let buyerStatus: any = 'registered';
+              try {
+                const { data: prof } = await supabase
+                  .from('profiles')
+                  .select('role, buyer_status')
+                  .eq('id', data.session.user.id)
+                  .maybeSingle();
+                if (prof) {
+                  if (prof.role) role = prof.role;
+                  if (prof.buyer_status) buyerStatus = prof.buyer_status;
+                }
+              } catch {}
+
               setUser({
                 id: data.session.user.id,
                 email: data.session.user.email || '',
                 displayName: data.session.user.user_metadata?.display_name || data.session.user.email?.split('@')[0] || 'Member',
                 avatarUrl: data.session.user.user_metadata?.avatar_url,
+                role,
+                buyerStatus,
                 createdAt: data.session.user.created_at
               });
             } else {
@@ -59,13 +75,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Subscribe to Supabase auth state changes if configured
     if (isSupabaseConfigured) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session?.user) {
+          let role: any = 'buyer';
+          let buyerStatus: any = 'registered';
+          try {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('role, buyer_status')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (prof) {
+              if (prof.role) role = prof.role;
+              if (prof.buyer_status) buyerStatus = prof.buyer_status;
+            }
+          } catch {}
+
           setUser({
             id: session.user.id,
             email: session.user.email || '',
             displayName: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Member',
             avatarUrl: session.user.user_metadata?.avatar_url,
+            role,
+            buyerStatus,
             createdAt: session.user.created_at
           });
         } else {
@@ -126,10 +158,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export function useAuth(): AuthContextType {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}
+};

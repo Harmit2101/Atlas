@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Bookmark, Bed, Bath, Maximize2, Calendar, 
-  MapPin, Shield, Check, ExternalLink, Globe2, Loader2, ImageOff
+  MapPin, Shield, Check, ExternalLink, Globe2, Loader2, ImageOff,
+  Briefcase, Send, Sparkles, AlertCircle, X, Maximize
 } from 'lucide-react';
 import { AtlasProperty } from '@/types/property';
 import { fetchPropertyById, fetchProperties } from '@/services/propertyService';
@@ -13,6 +14,8 @@ import { PropertyCard } from '@/components/property/PropertyCard';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { SpatialExperienceSection } from '@/components/property/spatial/SpatialExperienceSection';
+import { submitInquiry, submitListingClaim, recordEngagement } from '@/services/commercialService';
+import { BuyerType, PurchasePurpose, PurchaseTimeline, FinancingStatus } from '@/types/commercial';
 
 interface ThumbnailButtonProps {
   src: string;
@@ -78,8 +81,37 @@ export const PropertyDetailPage: React.FC = () => {
   const [heroImageLoaded, setHeroImageLoaded] = useState(false);
   const [heroImageError, setHeroImageError] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  
+  // Phase 1 Commercial State
+  const [inquirySubmitting, setInquirySubmitting] = useState(false);
   const [inquirySubmitted, setInquirySubmitted] = useState(false);
-  const [inquiryForm, setInquiryForm] = useState({ name: '', email: '', phone: '', message: '' });
+  const [inquiryError, setInquiryError] = useState<string | null>(null);
+  const [inquiryForm, setInquiryForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    whatsapp: '',
+    message: '',
+    budgetMin: '',
+    budgetMax: '',
+    purchaseTimeline: '1_to_3_months' as PurchaseTimeline,
+    buyerType: 'individual' as BuyerType,
+    purpose: 'second_home' as PurchasePurpose,
+    financingStatus: 'cash' as FinancingStatus
+  });
+
+  // Phase 2 Claim Listing Modal State
+  const [claimModalOpen, setClaimModalOpen] = useState(false);
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const [claimSubmitted, setClaimSubmitted] = useState(false);
+  const [claimForm, setClaimForm] = useState({
+    name: '',
+    email: '',
+    brokerageName: '',
+    licenseNumber: '',
+    notes: ''
+  });
+
   const [relatedProperties, setRelatedProperties] = useState<AtlasProperty[]>([]);
 
   useEffect(() => {
@@ -94,6 +126,8 @@ export const PropertyDetailPage: React.FC = () => {
     setHeroImageLoaded(false);
     setSelectedImageIndex(0);
     setInquirySubmitted(false);
+    setInquiryError(null);
+    setClaimSubmitted(false);
     setRelatedProperties([]);
     setLoading(true);
     setError(null);
@@ -104,6 +138,21 @@ export const PropertyDetailPage: React.FC = () => {
         if (mounted) {
           if (data) {
             setProperty(data);
+            recordEngagement(data.id, 'property_view', { source: data.sourceName });
+
+            // Auto-fill user email if authenticated
+            if (user) {
+              setInquiryForm(prev => ({
+                ...prev,
+                name: user.displayName || prev.name,
+                email: user.email || prev.email
+              }));
+              setClaimForm(prev => ({
+                ...prev,
+                name: user.displayName || prev.name,
+                email: user.email || prev.email
+              }));
+            }
 
             // Fetch related properties in same country/city
             fetchProperties({ country: data.country }, controller.signal)
@@ -132,7 +181,7 @@ export const PropertyDetailPage: React.FC = () => {
       mounted = false;
       controller.abort();
     };
-  }, [id]);
+  }, [id, user]);
 
   if (loading) {
     return (
@@ -173,11 +222,64 @@ export const PropertyDetailPage: React.FC = () => {
       return;
     }
     toggleSave(property.id, property.sourceName);
+    recordEngagement(property.id, 'property_saved', {}, user.id);
   };
 
-  const handleInquirySubmit = (e: React.FormEvent) => {
+  const handleInquirySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setInquirySubmitted(true);
+    setInquirySubmitting(true);
+    setInquiryError(null);
+
+    const res = await submitInquiry({
+      propertyId: property.id,
+      propertySource: property.sourceName?.toLowerCase().includes('untera') ? 'untera' : 'direct_dealer',
+      propertySourceUrl: property.sourceUrl,
+      propertyTitle: property.title,
+      userId: user?.id,
+      fullName: inquiryForm.name,
+      email: inquiryForm.email,
+      phone: inquiryForm.phone,
+      whatsapp: inquiryForm.whatsapp,
+      message: inquiryForm.message,
+      budgetMin: inquiryForm.budgetMin ? Number(inquiryForm.budgetMin) : undefined,
+      budgetMax: inquiryForm.budgetMax ? Number(inquiryForm.budgetMax) : undefined,
+      currency: property.currency || 'USD',
+      purchaseTimeline: inquiryForm.purchaseTimeline,
+      buyerType: inquiryForm.buyerType,
+      purpose: inquiryForm.purpose,
+      financingStatus: inquiryForm.financingStatus,
+      source: 'property_detail_concierge'
+    });
+
+    setInquirySubmitting(false);
+    if (res.data) {
+      setInquirySubmitted(true);
+      recordEngagement(property.id, 'inquiry_submitted', { inquiry_id: res.data.id }, user?.id);
+    } else {
+      setInquiryError(res.error || 'Failed to submit inquiry.');
+    }
+  };
+
+  const handleClaimSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+    setClaimSubmitting(true);
+    const res = await submitListingClaim({
+      propertyId: property.id,
+      claimantUserId: user.id,
+      claimantName: claimForm.name,
+      claimantEmail: claimForm.email,
+      brokerageName: claimForm.brokerageName,
+      licenseNumber: claimForm.licenseNumber,
+      notes: claimForm.notes
+    });
+    setClaimSubmitting(false);
+    if (res.success) {
+      setClaimSubmitted(true);
+    }
   };
 
   const handleSelectThumbnail = (idx: number) => {
@@ -204,6 +306,16 @@ export const PropertyDetailPage: React.FC = () => {
 
         <div className="flex items-center gap-3">
           {property.isLive && <UnteraAttribution variant="badge" />}
+
+          {/* Presentation Mode Button (Phase 2B) */}
+          <button
+            onClick={() => navigate(`/property/${property.id}/present`)}
+            title="Open iPad / Client Presentation Mode"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-[#c5a880]/10 hover:bg-[#c5a880]/20 border border-[#c5a880]/40 text-xs font-mono-luxury uppercase tracking-wider text-[#c5a880] transition-colors"
+          >
+            <Maximize className="w-3.5 h-3.5" />
+            <span>PRESENTATION MODE</span>
+          </button>
 
           {/* Original Source Link */}
           {property.sourceUrl && (
@@ -463,21 +575,28 @@ export const PropertyDetailPage: React.FC = () => {
                   <div className="w-8 h-8 rounded-full bg-[#c5a880] text-[#08080a] flex items-center justify-center mx-auto">
                     <Check className="w-4 h-4" />
                   </div>
-                  <h4 className="font-editorial text-lg text-[#f4f2ec]">Dossier Request Received</h4>
+                  <h4 className="font-editorial text-lg text-[#f4f2ec]">Acquisition Request Received</h4>
                   <p className="text-xs text-[#8e8d93]">
-                    An Atlas advisor will contact you within 4 hours via encrypted channel.
+                    Your inquiry has been logged in the private concierge registry. Our team will review your mandate and coordinate with the listing representative.
                   </p>
                 </div>
               ) : (
                 <form onSubmit={handleInquirySubmit} className="space-y-3.5 text-xs">
+                  {inquiryError && (
+                    <div className="p-2.5 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{inquiryError}</span>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
-                      Full Legal Name
+                      Full Legal Name *
                     </label>
                     <input
                       required
                       type="text"
-                      placeholder="Lord / Lady / Mr / Ms..."
+                      placeholder="Principal / Representative Name"
                       value={inquiryForm.name}
                       onChange={(e) => setInquiryForm({ ...inquiryForm, name: e.target.value })}
                       className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
@@ -486,7 +605,7 @@ export const PropertyDetailPage: React.FC = () => {
 
                   <div>
                     <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
-                      Confidential Email
+                      Confidential Email *
                     </label>
                     <input
                       required
@@ -498,26 +617,108 @@ export const PropertyDetailPage: React.FC = () => {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
-                      Telephone / Secure Messaging
-                    </label>
-                    <input
-                      type="tel"
-                      placeholder="+1 (555) 000-0000"
-                      value={inquiryForm.phone}
-                      onChange={(e) => setInquiryForm({ ...inquiryForm, phone: e.target.value })}
-                      className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                        Telephone
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="+1 (555) 000-0000"
+                        value={inquiryForm.phone}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, phone: e.target.value })}
+                        className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                        WhatsApp
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="+1 (555) 000-0000"
+                        value={inquiryForm.whatsapp}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, whatsapp: e.target.value })}
+                        className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Qualification Fields */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                        Buyer Entity
+                      </label>
+                      <select
+                        value={inquiryForm.buyerType}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, buyerType: e.target.value as BuyerType })}
+                        className="w-full bg-[#08080a] border border-white/10 rounded px-2.5 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
+                      >
+                        <option value="individual">Individual Buyer</option>
+                        <option value="family_office">Family Office</option>
+                        <option value="advisor_representative">Broker / Advisor</option>
+                        <option value="corporate_investor">Institutional Investor</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                        Timeline
+                      </label>
+                      <select
+                        value={inquiryForm.purchaseTimeline}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, purchaseTimeline: e.target.value as PurchaseTimeline })}
+                        className="w-full bg-[#08080a] border border-white/10 rounded px-2.5 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
+                      >
+                        <option value="immediate">Immediate (&lt; 30 days)</option>
+                        <option value="1_to_3_months">1 to 3 Months</option>
+                        <option value="3_to_6_months">3 to 6 Months</option>
+                        <option value="exploratory">Exploratory / Market Study</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                        Purpose
+                      </label>
+                      <select
+                        value={inquiryForm.purpose}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, purpose: e.target.value as PurchasePurpose })}
+                        className="w-full bg-[#08080a] border border-white/10 rounded px-2.5 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
+                      >
+                        <option value="second_home">Secondary Estate</option>
+                        <option value="primary_residence">Primary Residence</option>
+                        <option value="investment">Capital Preservation / Yield</option>
+                        <option value="development">Architectural Development</option>
+                        <option value="other">Special Mandate</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                        Capital Status
+                      </label>
+                      <select
+                        value={inquiryForm.financingStatus}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, financingStatus: e.target.value as FinancingStatus })}
+                        className="w-full bg-[#08080a] border border-white/10 rounded px-2.5 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none"
+                      >
+                        <option value="cash">100% Unencumbered Cash</option>
+                        <option value="financing">Private Banking / Structured Debt</option>
+                        <option value="undecided">Undisclosed / Flexible</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
-                      Advisory Requirements
+                      Advisory Requirements / Questions
                     </label>
                     <textarea
+                      required
                       rows={3}
-                      placeholder="Questions regarding title, taxation, sovereign residency, or escrow..."
+                      placeholder="Specify requested documentation (e.g. cadastral plan, title deed, private viewing schedule)..."
                       value={inquiryForm.message}
                       onChange={(e) => setInquiryForm({ ...inquiryForm, message: e.target.value })}
                       className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-2 text-[#f4f2ec] focus:border-[#c5a880] outline-none resize-none"
@@ -526,20 +727,172 @@ export const PropertyDetailPage: React.FC = () => {
 
                   <button
                     type="submit"
-                    className="w-full py-3 rounded-sm bg-[#c5a880] hover:bg-[#e2c295] text-[#08080a] font-mono-luxury text-xs uppercase tracking-widest font-semibold transition-colors mt-2"
+                    disabled={inquirySubmitting}
+                    className="w-full py-3 rounded-sm bg-[#c5a880] hover:bg-[#e2c295] text-[#08080a] font-mono-luxury text-xs uppercase tracking-widest font-semibold transition-colors mt-2 flex items-center justify-center gap-2"
                   >
-                    REQUEST CONFIDENTIAL DOSSIER
+                    {inquirySubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Transmitting Mandate...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>REQUEST PRIVATE ACCESS</span>
+                      </>
+                    )}
                   </button>
                 </form>
               )}
 
-              <div className="pt-2 text-[10px] font-mono-luxury text-[#8e8d93] text-center">
-                HM Coding Private Wealth Protocols · Strict NDA
+              <div className="pt-2 border-t border-white/[0.06] text-center space-y-2">
+                <div className="text-[10px] font-mono-luxury text-[#8e8d93]">
+                  Atlas Concierge Protocol · Strict Non-Disclosure
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setClaimModalOpen(true)}
+                    className="text-[10px] font-mono-luxury uppercase tracking-wider text-[#c5a880]/80 hover:text-[#c5a880] transition-colors"
+                  >
+                    Are you the listing representative? Claim listing →
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Claim Listing Modal */}
+      {claimModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#111116] border border-white/10 w-full max-w-md rounded p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
+                  BROKER VERIFICATION
+                </span>
+                <h3 className="font-editorial text-xl text-[#f4f2ec]">Claim Property Representation</h3>
+              </div>
+              <button 
+                onClick={() => setClaimModalOpen(false)}
+                className="text-[#8e8d93] hover:text-[#f4f2ec] p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {claimSubmitted ? (
+              <div className="py-6 text-center space-y-3">
+                <div className="w-8 h-8 rounded-full bg-[#c5a880] text-[#08080a] flex items-center justify-center mx-auto">
+                  <Check className="w-4 h-4" />
+                </div>
+                <h4 className="font-editorial text-lg text-[#f4f2ec]">Claim Submitted for Audit</h4>
+                <p className="text-xs text-[#8e8d93]">
+                  Our administration will verify your mandate with the regional regulatory body or listing portal before granting direct lead access.
+                </p>
+                <button
+                  onClick={() => { setClaimModalOpen(false); setClaimSubmitted(false); }}
+                  className="mt-4 px-4 py-1.5 rounded bg-white/10 hover:bg-white/20 text-xs font-mono-luxury text-[#f4f2ec]"
+                >
+                  Close Window
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleClaimSubmit} className="space-y-3 text-xs">
+                <p className="text-[11px] text-[#8e8d93]">
+                  If your agency holds an exclusive or co-exclusive representation mandate for this asset, claim it to receive verified buyer leads directly.
+                </p>
+
+                <div>
+                  <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                    Representative Name *
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={claimForm.name}
+                    onChange={e => setClaimForm({ ...claimForm, name: e.target.value })}
+                    className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-1.5 text-[#f4f2ec] outline-none focus:border-[#c5a880]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                    Corporate / Agency Email *
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    value={claimForm.email}
+                    onChange={e => setClaimForm({ ...claimForm, email: e.target.value })}
+                    className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-1.5 text-[#f4f2ec] outline-none focus:border-[#c5a880]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                    Brokerage / Agency Firm *
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. Knight Frank, Sotheby's International Realty"
+                    value={claimForm.brokerageName}
+                    onChange={e => setClaimForm({ ...claimForm, brokerageName: e.target.value })}
+                    className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-1.5 text-[#f4f2ec] outline-none focus:border-[#c5a880]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                    License / Mandate Reference
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="RERA / MLS / State License Number"
+                    value={claimForm.licenseNumber}
+                    onChange={e => setClaimForm({ ...claimForm, licenseNumber: e.target.value })}
+                    className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-1.5 text-[#f4f2ec] outline-none focus:border-[#c5a880]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93] mb-1">
+                    Mandate Verification Notes
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Link to official firm listing or mandate details..."
+                    value={claimForm.notes}
+                    onChange={e => setClaimForm({ ...claimForm, notes: e.target.value })}
+                    className="w-full bg-[#08080a] border border-white/10 rounded px-3 py-1.5 text-[#f4f2ec] outline-none focus:border-[#c5a880] resize-none"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setClaimModalOpen(false)}
+                    className="px-3 py-1.5 rounded bg-white/5 hover:bg-white/10 text-xs font-mono-luxury text-[#8e8d93]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={claimSubmitting}
+                    className="px-4 py-1.5 rounded bg-[#c5a880] hover:bg-[#e2c295] text-[#08080a] text-xs font-mono-luxury font-semibold uppercase tracking-wider flex items-center gap-1.5"
+                  >
+                    {claimSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    <span>Submit Claim</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Related Properties */}
       {relatedProperties.length > 0 && (

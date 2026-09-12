@@ -53,7 +53,7 @@ export const Footer: React.FC = () => {
           {/* Navigation */}
           <div className="space-y-3">
             <h4 className="text-xs font-mono-luxury uppercase tracking-widest text-[#f4f2ec]">
-              Discovery
+              Discovery & Network
             </h4>
             <ul className="space-y-2 text-xs">
               <li>
@@ -62,13 +62,17 @@ export const Footer: React.FC = () => {
                 </Link>
               </li>
               <li>
-                <Link to="/explore?view=all" className="hover:text-[#c5a880] transition-colors">Full Collection</Link>
+                <Link to="/private-client" className="hover:text-[#c5a880] transition-colors text-[#c5a880]">
+                  Private Client Suite
+                </Link>
+              </li>
+              <li>
+                <Link to="/dealer" className="hover:text-[#c5a880] transition-colors">
+                  Partner Broker Portal
+                </Link>
               </li>
               <li>
                 <Link to="/saved" className="hover:text-[#c5a880] transition-colors">Saved Portfolio</Link>
-              </li>
-              <li>
-                <Link to="/about" className="hover:text-[#c5a880] transition-colors">The Atlas Standard</Link>
               </li>
               <li>
                 <Link to="/contact" className="hover:text-[#c5a880] transition-colors">Private Advisory</Link>
