@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, MapPin, ArrowRight, Loader2 } from 'lucide-react';
+import { Search, X, MapPin, ArrowRight, Loader2, Building2 } from 'lucide-react';
 import { AtlasProperty } from '@/types/property';
 import { fetchProperties } from '@/services/propertyService';
 import { DESTINATIONS } from '@/data/destinations';
@@ -182,11 +182,20 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={prop.images[0]} 
-                          alt={prop.title}
-                          className="w-10 h-10 object-cover rounded" 
-                        />
+                        {prop.images && prop.images[0] ? (
+                          <img 
+                            src={prop.images[0]} 
+                            alt={prop.title}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = 'none';
+                              (e.currentTarget.nextElementSibling as HTMLElement)?.classList.remove('hidden');
+                            }}
+                            className="w-10 h-10 object-cover rounded shrink-0 bg-black/40" 
+                          />
+                        ) : null}
+                        <div className={`w-10 h-10 rounded shrink-0 bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-[#c5a880]/60 ${prop.images?.[0] ? 'hidden' : ''}`}>
+                          <Building2 className="w-4 h-4" />
+                        </div>
                         <div>
                           <div className="text-xs font-medium text-[#f4f2ec] line-clamp-1">{prop.title}</div>
                           <div className="text-[11px] text-[#8e8d93]">

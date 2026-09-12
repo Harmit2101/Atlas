@@ -1,7 +1,7 @@
 import { UnteraRawListing, UnteraSearchResponse, UnteraSingleListingResponse } from '@/types/property';
 import { MarketScoresResponse, UnteraStats, UnteraSourcesResponse } from '@/types/market';
 
-const UNTERA_BASE_URL = '/api/untera';
+const UNTERA_BASE_URL = typeof window !== 'undefined' ? '/api/untera' : 'http://localhost:5173/api/untera';
 
 /**
  * Indicates if the Untera service integration is enabled.
@@ -59,13 +59,17 @@ async function unteraFetch<T>(
     return cached.data as T;
   }
 
-  // Enforce burst rate-limit guard
+  // Enforce burst rate-limit guard with gentle self-throttling wait
   if (!canMakeRequest()) {
-    // If cached stale data exists, return it instead of throwing
     if (cached) {
       return cached.data as T;
     }
-    throw new Error('RATE_LIMIT_BURST_PROTECTION');
+    const oldest = requestTimestamps[0] || 0;
+    const waitTime = Math.min(Math.max(60000 - (Date.now() - oldest) + 100, 1000), 4000);
+    await new Promise(r => setTimeout(r, waitTime));
+    if (!canMakeRequest()) {
+      throw new Error('RATE_LIMIT_BURST_PROTECTION');
+    }
   }
 
   const url = `${UNTERA_BASE_URL}${endpoint}${sortedQuery ? `?${sortedQuery}` : ''}`;

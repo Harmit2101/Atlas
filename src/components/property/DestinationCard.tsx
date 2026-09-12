@@ -14,13 +14,17 @@ export const DestinationCard: React.FC<DestinationCardProps> = ({ destination })
       className="group relative block aspect-[4/5] overflow-hidden rounded-sm bg-[#111116] border border-white/[0.08] hover:border-[#c5a880]/50 transition-all duration-700"
       data-cursor="EXPLORE"
     >
-      {/* Background Image */}
-      <img
-        src={destination.image}
-        alt={destination.name}
-        loading="lazy"
-        className="w-full h-full object-cover transition-transform duration-1000 ease-out group-hover:scale-105"
-      />
+      {/* Background Image or Editorial Gradient */}
+      {destination.image ? (
+        <img
+          src={destination.image}
+          alt={destination.name}
+          loading="lazy"
+          className="w-full h-full object-cover transition-transform duration-1000 ease-out group-hover:scale-105"
+        />
+      ) : (
+        <div className="w-full h-full bg-gradient-to-br from-[#181824] via-[#111116] to-[#08080a]" />
+      )}
       
       {/* Editorial Gradient Overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-[#08080a]/40 to-black/20 group-hover:via-[#08080a]/30 transition-all" />

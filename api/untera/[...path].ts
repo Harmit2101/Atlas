@@ -5,6 +5,10 @@ const UNTERA_BASE_URL = 'https://api.untera.io/api/v1';
 // Whitelist of allowed endpoints - prevents open proxy vulnerability
 const ALLOWED_ENDPOINT_PATTERN = /^(listings\/search|listings\/[a-zA-Z0-9_-]+|market\/scores|stats|sources)$/;
 
+// In-memory cache for serverless instance (15 min TTL)
+const serverlessCache = new Map<string, { body: string; status: number; timestamp: number }>();
+const CACHE_TTL_MS = 15 * 60 * 1000;
+
 /**
  * Serverless API Proxy for Untera Real Estate API
  * Runs server-side on Vercel to protect UNTERA_API_KEY and eliminate CORS issues.
@@ -71,6 +75,18 @@ export default async function handler(req: any, res: any) {
       queryString = qs ? `?${qs}` : '';
     }
 
+    const cacheKey = `${cleanPath}${queryString}`;
+    const cached = serverlessCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      res.writeHead?.(cached.status, { 
+        'Content-Type': 'application/json',
+        'X-Atlas-Cache': 'HIT',
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600'
+      }) || res.status?.(cached.status);
+      res.end(cached.body);
+      return;
+    }
+
     const upstreamUrl = `${UNTERA_BASE_URL}/${cleanPath}${queryString}`;
 
     const upstreamResponse = await fetch(upstreamUrl, {
@@ -83,6 +99,24 @@ export default async function handler(req: any, res: any) {
 
     const status = upstreamResponse.status;
     const responseText = await upstreamResponse.text();
+
+    if (status === 429 && cached) {
+      res.writeHead?.(200, { 
+        'Content-Type': 'application/json',
+        'X-Atlas-Cache': 'STALE_RATE_LIMITED',
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600'
+      }) || res.status?.(200);
+      res.end(cached.body);
+      return;
+    }
+
+    if (status === 200) {
+      serverlessCache.set(cacheKey, {
+        body: responseText,
+        status,
+        timestamp: Date.now()
+      });
+    }
 
     res.writeHead?.(status, { 
       'Content-Type': 'application/json',

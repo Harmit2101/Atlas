@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Bookmark, Bed, Bath, Maximize2, Calendar, 
-  MapPin, Shield, Check, ExternalLink, Globe2, Loader2
+  MapPin, Shield, Check, ExternalLink, Globe2, Loader2, ImageOff
 } from 'lucide-react';
 import { AtlasProperty } from '@/types/property';
 import { fetchPropertyById, fetchProperties } from '@/services/propertyService';
@@ -12,6 +12,56 @@ import { AuthModal } from '@/components/auth/AuthModal';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { ErrorState } from '@/components/ui/ErrorState';
+
+interface ThumbnailButtonProps {
+  src: string;
+  index: number;
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+const ThumbnailButton: React.FC<ThumbnailButtonProps> = ({
+  src,
+  index,
+  isSelected,
+  onClick
+}) => {
+  const [loaded, setLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  // If a specific thumbnail fails to load, never render an empty black box
+  if (hasError) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Inspect photo ${index + 1}`}
+      className={`relative w-24 sm:w-32 aspect-[16/10] rounded-sm overflow-hidden border transition-all shrink-0 bg-[#0d0d13] ${
+        isSelected
+          ? 'border-[#c5a880] ring-2 ring-[#c5a880]/50 scale-[1.02]'
+          : 'border-white/10 opacity-70 hover:opacity-100 hover:border-white/30'
+      }`}
+    >
+      {!loaded && (
+        <div className="absolute inset-0 bg-white/[0.04] animate-pulse" />
+      )}
+      <img
+        src={src}
+        alt={`Listing view ${index + 1}`}
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={() => setHasError(true)}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${
+          loaded ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+      <div className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/75 text-[9px] font-mono-luxury text-[#f4f2ec]/80 leading-none">
+        {index + 1}
+      </div>
+    </button>
+  );
+};
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +73,8 @@ export const PropertyDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [heroImageLoaded, setHeroImageLoaded] = useState(false);
+  const [heroImageError, setHeroImageError] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [inquirySubmitted, setInquirySubmitted] = useState(false);
   const [inquiryForm, setInquiryForm] = useState({ name: '', email: '', phone: '', message: '' });
@@ -34,14 +86,23 @@ export const PropertyDetailPage: React.FC = () => {
     let mounted = true;
     const controller = new AbortController();
 
+    // Reset state immediately on route/id change to prevent stale images/data
+    setProperty(null);
+    setHeroImageError(false);
+    setHeroImageLoaded(false);
+    setSelectedImageIndex(0);
+    setInquirySubmitted(false);
+    setRelatedProperties([]);
+    setLoading(true);
+    setError(null);
+
     async function loadProperty() {
-      setLoading(true);
-      setError(null);
       try {
         const data = await fetchPropertyById(id!, controller.signal);
         if (mounted) {
           if (data) {
             setProperty(data);
+
             // Fetch related properties in same country/city
             fetchProperties({ country: data.country }, controller.signal)
               .then(res => {
@@ -117,6 +178,16 @@ export const PropertyDetailPage: React.FC = () => {
     setInquirySubmitted(true);
   };
 
+  const handleSelectThumbnail = (idx: number) => {
+    setSelectedImageIndex(idx);
+    setHeroImageLoaded(false);
+    setHeroImageError(false);
+  };
+
+  const activeHeroUrl = property.images && property.images.length > 0
+    ? property.images[selectedImageIndex] || property.images[0]
+    : null;
+
   return (
     <div className="pb-24 space-y-12">
       {/* Top Breadcrumb Bar */}
@@ -138,7 +209,7 @@ export const PropertyDetailPage: React.FC = () => {
               href={property.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono-luxury uppercase tracking-wider text-[#f4f2ec] transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono-luxury uppercase tracking-wider text-[#f4f2ec] transition-colors"
             >
               <span>VIEW ORIGINAL LISTING</span>
               <ExternalLink className="w-3.5 h-3.5 text-[#c5a880]" />
@@ -163,15 +234,40 @@ export const PropertyDetailPage: React.FC = () => {
       {/* Cinematic Gallery Hero */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
         <div className="relative aspect-[16/9] sm:aspect-[21/9] rounded-sm overflow-hidden bg-black/50 border border-white/[0.08]">
-          <img
-            src={property.images[selectedImageIndex] || property.images[0]}
-            alt={property.title}
-            className="w-full h-full object-cover transition-all duration-700"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-transparent to-black/30" />
+          {activeHeroUrl && !heroImageError ? (
+            <>
+              {!heroImageLoaded && (
+                <div className="absolute inset-0 bg-white/[0.04] animate-pulse" />
+              )}
+              <img
+                key={activeHeroUrl}
+                src={activeHeroUrl}
+                alt={property.title}
+                onLoad={() => setHeroImageLoaded(true)}
+                onError={() => setHeroImageError(true)}
+                className={`w-full h-full object-cover transition-opacity duration-500 ${
+                  heroImageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            </>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d0d13] p-8 text-center select-none relative overflow-hidden">
+              <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:32px_32px]" />
+              <div className="w-14 h-14 rounded-full bg-white/[0.02] border border-white/[0.08] flex items-center justify-center text-[#c5a880]/80 mb-3 shadow-inner">
+                <ImageOff className="w-6 h-6 text-[#c5a880]/70" />
+              </div>
+              <div className="text-xs font-mono-luxury uppercase tracking-[0.3em] text-[#f4f2ec]/90 font-medium">
+                Image Unavailable
+              </div>
+              <div className="text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]/70 mt-1">
+                Live MLS Listing
+              </div>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-transparent to-black/30 pointer-events-none" />
 
           {/* Badges */}
-          <div className="absolute top-6 left-6 flex items-center gap-2 flex-wrap">
+          <div className="absolute top-6 left-6 flex items-center gap-2 flex-wrap pointer-events-none">
             <span className="text-[10px] font-mono-luxury uppercase tracking-widest px-3 py-1 rounded bg-[#08080a]/90 backdrop-blur-md border border-white/10 text-[#f4f2ec]">
               {property.status || 'Verified Listing'}
             </span>
@@ -185,11 +281,11 @@ export const PropertyDetailPage: React.FC = () => {
             )}
           </div>
 
-          <div className="absolute bottom-6 left-6 right-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div className="absolute bottom-6 left-6 right-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4 pointer-events-none">
             <div>
               <div className="flex items-center gap-2 text-xs text-[#c5a880] mb-1">
                 <MapPin className="w-3.5 h-3.5" />
-                <span>{property.city}, {property.country} {property.address ? `· ${property.address}` : ''}</span>
+                <span>{property.displayLocation || `${property.city}, ${property.country}`}</span>
               </div>
               <h1 className="font-editorial text-3xl sm:text-5xl text-[#f4f2ec] tracking-wide max-w-2xl leading-tight">
                 {property.title}
@@ -207,22 +303,24 @@ export const PropertyDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Thumbnail Selector */}
-        {property.images.length > 1 && (
-          <div className="flex items-center gap-3 overflow-x-auto pb-2">
-            {property.images.map((img, idx) => (
-              <button
-                key={idx}
-                onClick={() => setSelectedImageIndex(idx)}
-                className={`relative w-24 sm:w-32 aspect-[16/10] rounded-sm overflow-hidden border transition-all shrink-0 ${
-                  selectedImageIndex === idx
-                    ? 'border-[#c5a880] ring-2 ring-[#c5a880]/30'
-                    : 'border-white/10 opacity-60 hover:opacity-100'
-                }`}
-              >
-                <img src={img} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
-              </button>
-            ))}
+        {/* Dynamic Gallery Strip: strictly rendered from actual listing images */}
+        {property.images && property.images.length > 1 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93]">
+              <span>Gallery Archives ({selectedImageIndex + 1} of {property.images.length})</span>
+              <span>Click thumbnail to view</span>
+            </div>
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
+              {property.images.map((img, idx) => (
+                <ThumbnailButton
+                  key={img}
+                  src={img}
+                  index={idx}
+                  isSelected={selectedImageIndex === idx}
+                  onClick={() => handleSelectThumbnail(idx)}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -239,7 +337,9 @@ export const PropertyDetailPage: React.FC = () => {
                   <Bed className="w-3.5 h-3.5 text-[#c5a880]" />
                   <span>Bedrooms</span>
                 </div>
-                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">{property.bedrooms} Suites</div>
+                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
+                  {property.bedrooms > 0 ? `${property.bedrooms} ${property.bedrooms === 1 ? 'Bedroom' : 'Bedrooms'}` : 'Not Listed'}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -247,7 +347,9 @@ export const PropertyDetailPage: React.FC = () => {
                   <Bath className="w-3.5 h-3.5 text-[#c5a880]" />
                   <span>Bathrooms</span>
                 </div>
-                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">{property.bathrooms} Baths</div>
+                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
+                  {property.bathrooms > 0 ? `${property.bathrooms} ${property.bathrooms === 1 ? 'Bath' : 'Baths'}` : 'Not Listed'}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -255,8 +357,12 @@ export const PropertyDetailPage: React.FC = () => {
                   <Maximize2 className="w-3.5 h-3.5 text-[#c5a880]" />
                   <span>Living Space</span>
                 </div>
-                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">{property.areaSqft.toLocaleString()} sq ft</div>
-                <div className="text-[10px] text-[#8e8d93]">({property.areaSqm} m²)</div>
+                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
+                  {property.areaSqft > 0 ? `${property.areaSqft.toLocaleString()} sq ft` : 'Not Listed'}
+                </div>
+                {property.areaSqm > 0 && (
+                  <div className="text-[10px] text-[#8e8d93]">({property.areaSqm} m²)</div>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -264,7 +370,9 @@ export const PropertyDetailPage: React.FC = () => {
                   <Calendar className="w-3.5 h-3.5 text-[#c5a880]" />
                   <span>Completed</span>
                 </div>
-                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">{property.yearBuilt || 'Verified'}</div>
+                <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
+                  {property.yearBuilt || 'Not Listed'}
+                </div>
               </div>
             </div>
 
@@ -272,7 +380,7 @@ export const PropertyDetailPage: React.FC = () => {
             <div className="space-y-4">
               <h2 className="font-editorial text-2xl text-[#f4f2ec]">Architectural Narrative</h2>
               <p className="text-sm leading-relaxed text-[#8e8d93] font-light whitespace-pre-line">
-                {property.description}
+                {property.description || 'Listing description not provided by MLS source. Full asset documentation and specifications available upon inquiry.'}
               </p>
             </div>
 
@@ -306,16 +414,22 @@ export const PropertyDetailPage: React.FC = () => {
             {/* Key Features List */}
             <div className="space-y-4">
               <h2 className="font-editorial text-2xl text-[#f4f2ec]">Asset Specifications & Highlights</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {property.features.map((feature, idx) => (
-                  <div key={idx} className="flex items-center gap-3 p-3 rounded bg-white/[0.02] border border-white/[0.05]">
-                    <div className="w-5 h-5 rounded-full bg-[#c5a880]/10 flex items-center justify-center text-[#c5a880] shrink-0">
-                      <Check className="w-3 h-3" />
+              {property.features.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {property.features.map((feature, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3 rounded bg-white/[0.02] border border-white/[0.05]">
+                      <div className="w-5 h-5 rounded-full bg-[#c5a880]/10 flex items-center justify-center text-[#c5a880] shrink-0">
+                        <Check className="w-3 h-3" />
+                      </div>
+                      <span className="text-xs text-[#f4f2ec]">{feature}</span>
                     </div>
-                    <span className="text-xs text-[#f4f2ec]">{feature}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 rounded bg-white/[0.02] border border-white/[0.05] text-xs text-[#8e8d93] font-light">
+                  Detailed amenity and specification schedules are available directly from the registry source upon verified inquiry.
+                </div>
+              )}
             </div>
           </div>
 

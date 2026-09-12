@@ -8,8 +8,8 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useProperties } from '@/hooks/useProperties';
-import { deriveDestinationClusters } from '@/services/destinationService';
-import { PropertyFilterState } from '@/types/property';
+import { isValidCoordinate } from '@/services/destinationService';
+import { PropertyFilterState, AtlasProperty } from '@/types/property';
 import { ArrowDown, Loader2, Compass } from 'lucide-react';
 
 export const ExplorePage: React.FC = () => {
@@ -47,9 +47,16 @@ export const ExplorePage: React.FC = () => {
     refetch 
   } = useProperties(filter);
 
-  // Derive dynamic destination clusters from live property inventory
-  const destinations = useMemo(() => {
-    return deriveDestinationClusters(properties);
+  // Derive live geocoded cartography metrics directly from properties (zero clusters)
+  const { geocodedCount, uniqueLocationsCount } = useMemo(() => {
+    const geocoded = properties.filter(p => isValidCoordinate(p.latitude, p.longitude));
+    const uniqueCoords = new Set(
+      geocoded.map(p => `${Number(p.latitude).toFixed(4)}_${Number(p.longitude).toFixed(4)}`)
+    );
+    return {
+      geocodedCount: geocoded.length,
+      uniqueLocationsCount: uniqueCoords.size
+    };
   }, [properties]);
 
   // Sync URL params when searchParams change (browser back/forward navigation)
@@ -172,23 +179,24 @@ export const ExplorePage: React.FC = () => {
           <div className="flex items-center justify-between px-2 text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93]">
             <span className="flex items-center gap-1.5 text-[#c5a880]">
               <Compass className="w-3.5 h-3.5" />
-              <span>GLOBAL ASSET CARTOGRAPHY · REAL EARTH</span>
+              <span>LIVE CARTOGRAPHY · INTERACTIVE PLANETARY ATLAS</span>
             </span>
-            <span>{destinations.length} Active Hubs</span>
+            <span>
+              {loading ? (
+                'Streaming live coordinates...'
+              ) : properties.length === 0 ? (
+                '0 Live Listings'
+              ) : (
+                `${properties.length} LIVE ${properties.length === 1 ? 'LISTING' : 'LISTINGS'} · ${geocodedCount} GEOLOCATED (${uniqueLocationsCount} DISTINCT LOCATIONS)`
+              )}
+            </span>
           </div>
 
           <div className="relative w-full bg-transparent overflow-visible">
             <GlobeScene
               height={activeTab === 'globe' ? 'h-[600px] sm:h-[700px]' : 'h-[360px] sm:h-[440px]'}
-              destinations={destinations}
-              selectedDestinationId={filter.destinationId || filter.location}
-              onDestinationSelect={(dest) => {
-                handleFilterChange({
-                  ...filter,
-                  destinationId: dest.name,
-                  location: dest.name
-                });
-              }}
+              properties={properties}
+              totalListingsCount={properties.length}
               showHUD={false}
             />
           </div>
@@ -201,7 +209,6 @@ export const ExplorePage: React.FC = () => {
         onChange={handleFilterChange}
         onReset={handleReset}
         resultCount={total || properties.length}
-        destinations={destinations}
         isLive={isLive}
       />
 

@@ -1,75 +1,63 @@
-import React, { Suspense, useState, useMemo } from 'react';
+import React, { Suspense, useState, useMemo, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useNavigate } from 'react-router-dom';
-import { DestinationCluster } from '@/types/destination';
-import { DESTINATIONS as STATIC_DESTINATIONS } from '@/data/destinations';
+import { AtlasProperty } from '@/types/property';
 import { Globe } from './Globe';
 import { CelestialStars } from './CelestialStars';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { isValidCoordinate } from '@/services/destinationService';
 import { Compass, Globe2 } from 'lucide-react';
 
 interface GlobeSceneProps {
   className?: string;
   height?: string;
-  destinations?: DestinationCluster[];
-  selectedDestinationId?: string;
-  onDestinationSelect?: (destination: DestinationCluster) => void;
+  properties?: AtlasProperty[];
+  selectedPropertyId?: string | null;
+  onPropertySelect?: (property: AtlasProperty) => void;
   showHUD?: boolean;
+  totalListingsCount?: number;
+  // Retained for backward-compatibility with other callers:
+  destinations?: any[];
+  selectedDestinationId?: string;
+  onDestinationSelect?: (destination: any) => void;
 }
 
 export const GlobeScene: React.FC<GlobeSceneProps> = ({
   className = '',
   height = 'h-[500px] md:h-[640px]',
-  destinations: propDestinations,
-  selectedDestinationId,
-  onDestinationSelect,
-  showHUD = true
+  properties = [],
+  selectedPropertyId = null,
+  onPropertySelect,
+  showHUD = true,
+  totalListingsCount
 }) => {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
-  const [hoveredCityId, setHoveredCityId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  // Use dynamic destinations if supplied, otherwise fallback to standard hubs
-  const destinations = useMemo(() => {
-    if (propDestinations && propDestinations.length > 0) {
-      return propDestinations;
+  // Click on property marker navigates directly to the live property detail page
+  const handlePropertySelect = useCallback((property: AtlasProperty) => {
+    if (onPropertySelect) {
+      onPropertySelect(property);
     }
-    return STATIC_DESTINATIONS;
-  }, [propDestinations]);
+    navigate(`/property/${property.id}`);
+  }, [onPropertySelect, navigate]);
 
-  const initialSelected = destinations.find(d => 
-    d.id === selectedDestinationId || d.name.toLowerCase() === selectedDestinationId?.toLowerCase()
-  ) || null;
+  const geocodedProperties = useMemo(() => {
+    return properties.filter(p => isValidCoordinate(p.latitude, p.longitude));
+  }, [properties]);
 
-  const [selectedCity, setSelectedCity] = useState<DestinationCluster | null>(initialSelected);
-
-  // Synchronize when selectedDestinationId prop updates from URL
-  React.useEffect(() => {
-    if (selectedDestinationId) {
-      const match = destinations.find(d => 
-        d.id === selectedDestinationId || d.name.toLowerCase() === selectedDestinationId.toLowerCase()
-      );
-      if (match) setSelectedCity(match);
+  const uniqueLocationsCount = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of geocodedProperties) {
+      set.add(`${p.latitude.toFixed(4)}_${p.longitude.toFixed(4)}`);
     }
-  }, [selectedDestinationId, destinations]);
+    return set.size;
+  }, [geocodedProperties]);
 
-  const handleCitySelect = (dest: DestinationCluster) => {
-    setSelectedCity(dest);
-    if (onDestinationSelect) {
-      onDestinationSelect(dest);
-    } else {
-      setTimeout(() => {
-        navigate(`/explore?location=${encodeURIComponent(dest.name)}`);
-      }, 700);
-    }
-  };
-
-  const activeCity = destinations.find(d => d.id === (hoveredCityId || selectedCity?.id)) || null;
-
-  const totalListed = useMemo(() => {
-    return destinations.reduce((sum, d) => sum + (d.propertyCount || 0), 0);
-  }, [destinations]);
+  const totalGeolocated = geocodedProperties.length;
+  const displayTotal = totalListingsCount !== undefined ? totalListingsCount : totalGeolocated;
 
   return (
     <div className={`relative w-full ${height} select-none bg-transparent overflow-visible ${className}`}>
@@ -81,29 +69,37 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
           <p className="text-xs text-[#8e8d93] max-w-md mb-6">
             Live geographic inventory streaming from verified international MLS syndicates.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl w-full">
-            {destinations.slice(0, 8).map((dest) => (
-              <button
-                key={dest.id}
-                onClick={() => handleCitySelect(dest)}
-                className="p-3 text-left border border-white/10 hover:border-[#c5a880] bg-[#111116] transition-colors rounded"
-              >
-                <div className="text-[10px] uppercase text-[#c5a880] font-mono-luxury">{dest.country}</div>
-                <div className="text-sm font-medium text-[#f4f2ec]">{dest.name}</div>
-                <div className="text-[11px] text-[#8e8d93] mt-1">{dest.propertyCount} assets</div>
-              </button>
-            ))}
-          </div>
+          {geocodedProperties.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl w-full max-h-[360px] overflow-y-auto">
+              {geocodedProperties.map((prop) => (
+                <button
+                  key={prop.id}
+                  onClick={() => handlePropertySelect(prop)}
+                  className="p-3 text-left border border-white/10 hover:border-[#c5a880] bg-[#111116] transition-colors rounded"
+                >
+                  <div className="text-[10px] uppercase text-[#c5a880] font-mono-luxury truncate">
+                    {prop.city}, {prop.country}
+                  </div>
+                  <div className="text-xs font-medium text-[#f4f2ec] truncate">{prop.title}</div>
+                  <div className="text-[11px] text-[#8e8d93] mt-1">{prop.priceFormatted}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-[#8e8d93]">
+              No geocoded properties in current inventory selection.
+            </p>
+          )}
         </div>
       ) : (
-        /* Transparent Seamless WebGL Canvas - Floats directly on page without rectangular container */
+        /* Transparent Seamless WebGL Canvas */
         <Canvas
           camera={{ position: [0, 0, 5.8], fov: 36 }}
           dpr={[1, 1.5]}
-          gl={{ 
-            antialias: true, 
-            alpha: true, 
-            powerPreference: 'high-performance' 
+          gl={{
+            antialias: true,
+            alpha: true,
+            powerPreference: 'high-performance'
           }}
           onCreated={({ gl }) => {
             gl.setClearColor(0x000000, 0);
@@ -120,54 +116,57 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
 
           <Suspense fallback={null}>
             <Globe
-              destinations={destinations}
+              properties={properties}
               globeRadius={1.55}
-              hoveredCityId={hoveredCityId}
-              selectedCity={selectedCity}
-              onHoverCity={setHoveredCityId}
-              onSelectCity={handleCitySelect}
-              autoRotate={!selectedCity}
+              hoveredId={hoveredId}
+              selectedPropertyId={selectedPropertyId}
+              onHoverId={setHoveredId}
+              onSelectProperty={handlePropertySelect}
+              autoRotate={!selectedPropertyId}
             />
           </Suspense>
 
           <OrbitControls
-            enableZoom={false}
-            enablePan={false}
+            enableZoom={true}
+            minDistance={2.4}
+            maxDistance={7.0}
             rotateSpeed={0.45}
             dampingFactor={0.08}
-            minPolarAngle={Math.PI / 3.2}
-            maxPolarAngle={(2.2 * Math.PI) / 3.2}
+            minPolarAngle={Math.PI / 3.4}
+            maxPolarAngle={(2.3 * Math.PI) / 3.4}
           />
         </Canvas>
       )}
 
-      {/* Minimalist Telemetry HUD */}
+      {/* Minimalist Telemetry HUD (Zero Cluster Jargon) */}
       {showHUD && (
         <div className="absolute top-4 left-4 z-20 pointer-events-none hidden sm:flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-[9px] font-mono-luxury tracking-widest uppercase text-[#c5a880]">
             <Compass className="w-3 h-3 text-[#c5a880]" />
-            <span>GLOBAL ASSET CARTOGRAPHY</span>
+            <span>GLOBAL ASSET CARTOGRAPHY · REAL EARTH</span>
           </div>
-          {activeCity ? (
-            <div className="flex flex-col border-l border-[#c5a880]/40 pl-2.5 mt-0.5 backdrop-blur-sm">
-              <span className="text-[10px] uppercase text-[#8e8d93]">{activeCity.country}</span>
-              <span className="text-sm font-editorial text-[#f4f2ec] tracking-wide">{activeCity.name}</span>
-              <span className="text-[10px] font-mono-luxury text-[#c5a880]">
-                {activeCity.propertyCount > 0 ? `${activeCity.propertyCount} LIVE ASSETS` : 'ACTIVE MARKET'}
-              </span>
+
+          {totalGeolocated > 0 ? (
+            <div className="text-[10px] font-mono-luxury text-[#8e8d93]/90 border-l border-white/10 pl-2 space-y-0.5">
+              <div className="text-[#f4f2ec]">
+                {displayTotal} LIVE {displayTotal === 1 ? 'LISTING' : 'LISTINGS'} · {totalGeolocated} GEOLOCATED
+              </div>
+              <div className="text-[9px] text-[#c5a880]">
+                {uniqueLocationsCount} DISTINCT {uniqueLocationsCount === 1 ? 'LOCATION' : 'LOCATIONS'}
+              </div>
             </div>
           ) : (
             <div className="text-[10px] font-mono-luxury text-[#8e8d93]/80 border-l border-white/10 pl-2">
-              {destinations.length} JURISDICTIONS · {totalListed} LIVE ASSETS
+              0 GEOLOCATED PROPERTIES AVAILABLE
             </div>
           )}
         </div>
       )}
 
-      {/* Minimalist Floating Helper Indicator */}
+      {/* Minimalist Floating Navigation Helper */}
       <div className="absolute bottom-4 right-4 z-20 pointer-events-none text-right hidden sm:block">
-        <span className="text-[9px] uppercase font-mono-luxury tracking-widest text-[#8e8d93] bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/5">
-          Drag to Orbit · Select to Filter
+        <span className="text-[9px] uppercase font-mono-luxury tracking-widest text-[#8e8d93] bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/10">
+          Drag to Rotate · Scroll to Zoom · Click Marker to View Dossier
         </span>
       </div>
     </div>

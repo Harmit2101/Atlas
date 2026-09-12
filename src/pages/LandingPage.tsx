@@ -19,7 +19,7 @@ export const LandingPage: React.FC = () => {
 
   // Fetch live featured listings from Untera
   const { properties, loading, error, isLive, refetch } = useProperties({
-    pageSize: 6
+    pageSize: 24
   });
 
   // Dynamically derive destination clusters from live property inventory
@@ -119,7 +119,8 @@ export const LandingPage: React.FC = () => {
               <div className="w-full relative h-[480px] sm:h-[580px] lg:h-[660px]">
                 <GlobeScene 
                   height="h-full" 
-                  destinations={destinations}
+                  properties={properties}
+                  totalListingsCount={properties.length}
                   showHUD={true}
                 />
               </div>

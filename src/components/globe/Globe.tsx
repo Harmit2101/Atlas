@@ -1,17 +1,18 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Destination } from '@/types/destination';
-import { CityMarker } from './CityMarker';
+import { AtlasProperty } from '@/types/property';
+import { PropertyMarker } from './PropertyMarker';
 import { Atmosphere } from './Atmosphere';
+import { isValidCoordinate } from '@/services/destinationService';
 
 interface GlobeProps {
-  destinations: Destination[];
+  properties?: AtlasProperty[];
   globeRadius?: number;
-  hoveredCityId: string | null;
-  selectedCity: Destination | null;
-  onHoverCity: (id: string | null) => void;
-  onSelectCity: (destination: Destination) => void;
+  hoveredId: string | null;
+  selectedPropertyId?: string | null;
+  onHoverId: (id: string | null) => void;
+  onSelectProperty: (property: AtlasProperty) => void;
   autoRotate?: boolean;
 }
 
@@ -29,8 +30,7 @@ const earthVertexShader = `
   }
 `;
 
-// Fragment shader: combines real NASA day topography, specular ocean mask, and night city lights
-// into Atlas's signature dark luxury editorial palette
+// Fragment shader combining NASA day topography, specular oceans, and night lights
 const earthFragmentShader = `
   uniform sampler2D uDayMap;
   uniform sampler2D uNightMap;
@@ -48,55 +48,43 @@ const earthFragmentShader = `
     vec3 viewDir = normalize(-vPosition);
 
     if (uTextureLoaded < 0.5) {
-      // Fallback elegant dark sphere while textures stream in
       float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
       gl_FragColor = vec4(vec3(0.04, 0.04, 0.05) + vec3(0.77, 0.66, 0.50) * rim * 0.4, 1.0);
       return;
     }
 
-    // Sample real geographic textures
     vec4 daySample = texture2D(uDayMap, vUv);
     vec4 nightSample = texture2D(uNightMap, vUv);
     vec4 specSample = texture2D(uSpecularMap, vUv);
 
-    // In Three.js earth_specular, ocean is white (~1.0), land is dark (~0.0)
     float isWater = specSample.r;
     float isLand = 1.0 - isWater;
 
-    // Cinematic lighting (sunlight vector)
     float NdotL = dot(normal, uSunDirection);
     float dayFactor = smoothstep(-0.25, 0.45, NdotL);
     float nightFactor = 1.0 - smoothstep(-0.15, 0.30, NdotL);
 
-    // 1. Midnight Obsidian Oceans
     vec3 deepOcean = vec3(0.020, 0.024, 0.034);
     vec3 shallowOcean = vec3(0.035, 0.048, 0.065);
     vec3 oceanColor = mix(deepOcean, shallowOcean, daySample.b * 0.4);
 
-    // 2. Realistic Landmass Topography (Dark Luxury Palette)
-    // Continents are clearly recognizable across Europe, Africa, Asia, Americas, Australia
     float landLuminance = dot(daySample.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 landBase = vec3(0.055, 0.058, 0.070); // Deep graphite mantle
-    vec3 landHighlight = vec3(0.22, 0.20, 0.18); // Warm titanium topography
+    vec3 landBase = vec3(0.055, 0.058, 0.070);
+    vec3 landHighlight = vec3(0.22, 0.20, 0.18);
     vec3 landColor = mix(landBase, landHighlight, pow(landLuminance, 1.1) * 1.35);
 
-    // Base surface combines recognizable continents and midnight oceans
     vec3 surface = mix(landColor, oceanColor, isWater);
 
-    // 3. Subtle Ocean Specular Sheen (sun reflection on water)
     vec3 halfVec = normalize(uSunDirection + viewDir);
     float NdotH = max(dot(normal, halfVec), 0.0);
     float specular = pow(NdotH, 28.0) * isWater * 0.28;
 
-    // 4. Real Metropolitan City Lights (warm champagne gold)
     float cityLights = nightSample.r * isLand;
     vec3 cityColor = vec3(0.92, 0.78, 0.55) * cityLights * 1.6;
 
-    // 5. Atmospheric Fresnel Rim (champagne & azure horizon)
     float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.2);
     vec3 rimColor = mix(vec3(0.30, 0.45, 0.65), vec3(0.77, 0.66, 0.50), 0.40) * fresnel * 0.55;
 
-    // Blend final cinematic layers
     vec3 finalColor = surface * (0.32 + dayFactor * 0.68);
     finalColor += cityColor * (0.5 + nightFactor * 0.85);
     finalColor += vec3(0.77, 0.66, 0.50) * specular;
@@ -107,12 +95,12 @@ const earthFragmentShader = `
 `;
 
 export const Globe: React.FC<GlobeProps> = ({
-  destinations,
+  properties = [],
   globeRadius = 1.55,
-  hoveredCityId,
-  selectedCity,
-  onHoverCity,
-  onSelectCity,
+  hoveredId,
+  selectedPropertyId,
+  onHoverId,
+  onSelectProperty,
   autoRotate = true
 }) => {
   const globeGroupRef = useRef<THREE.Group>(null);
@@ -126,7 +114,7 @@ export const Globe: React.FC<GlobeProps> = ({
     spec: THREE.Texture | null;
   }>({ day: null, night: null, spec: null });
 
-  // Load real NASA/Three.js Earth geographic textures asynchronously
+  // Load NASA Earth geographic textures
   useEffect(() => {
     let active = true;
     const loader = new THREE.TextureLoader();
@@ -149,7 +137,7 @@ export const Globe: React.FC<GlobeProps> = ({
       texturesRef.current = { day, night, spec };
       setTexturesLoaded(true);
     }).catch((err) => {
-      console.warn('[ATLAS] Earth textures background load error, falling back to shader procedural mode:', err);
+      console.warn('[ATLAS] Earth texture load error:', err);
     });
 
     return () => {
@@ -160,7 +148,7 @@ export const Globe: React.FC<GlobeProps> = ({
     };
   }, []);
 
-  // Earth Shader Material instance
+  // Earth Shader Material
   const earthMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
       uniforms: {
@@ -177,7 +165,6 @@ export const Globe: React.FC<GlobeProps> = ({
     });
   }, []);
 
-  // Update material uniforms when textures finish loading
   useEffect(() => {
     if (texturesLoaded && texturesRef.current.day) {
       earthMaterial.uniforms.uDayMap.value = texturesRef.current.day;
@@ -188,21 +175,28 @@ export const Globe: React.FC<GlobeProps> = ({
     }
   }, [texturesLoaded, earthMaterial]);
 
-  // Update target rotation when a destination is selected
+  // Valid geocoded properties strictly from current live inventory
+  const geocodedProperties = useMemo(() => {
+    return properties.filter(p => isValidCoordinate(p.latitude, p.longitude));
+  }, [properties]);
+
+  // Smoothly face selected property if explicitly selected
   useEffect(() => {
-    if (selectedCity && globeGroupRef.current) {
-      // Calculate target rotation so selected city faces camera (+Z)
-      const targetPhi = (90 - selectedCity.latitude) * (Math.PI / 180);
-      const targetTheta = (selectedCity.longitude + 180) * (Math.PI / 180);
+    if (selectedPropertyId && globeGroupRef.current) {
+      const prop = geocodedProperties.find(p => p.id === selectedPropertyId);
+      if (prop) {
+        const targetPhi = (90 - prop.latitude) * (Math.PI / 180);
+        const targetTheta = (prop.longitude + 180) * (Math.PI / 180);
 
-      const targetY = -targetTheta + Math.PI / 2;
-      const targetX = targetPhi - Math.PI / 2;
+        const targetY = -targetTheta + Math.PI / 2;
+        const targetX = prop.latitude * (Math.PI / 180);
 
-      targetRotationRef.current = { x: targetX * 0.35, y: targetY };
+        targetRotationRef.current = { x: targetX, y: targetY };
+      }
     }
-  }, [selectedCity]);
+  }, [selectedPropertyId, geocodedProperties]);
 
-  // Frame update: smooth rotation damping (accumulating delta, NO THREE.Clock deprecation)
+  // Frame update: smooth rotation damping and calm continuous planetary rotation
   useFrame((_, delta) => {
     timeRef.current += delta;
     earthMaterial.uniforms.uTime.value = timeRef.current;
@@ -210,7 +204,6 @@ export const Globe: React.FC<GlobeProps> = ({
     if (!globeGroupRef.current) return;
 
     if (targetRotationRef.current) {
-      // Shortest angle difference on Y axis to prevent unnecessary full spins
       const currentY = globeGroupRef.current.rotation.y;
       const targetY = targetRotationRef.current.y;
       const diffY = Math.atan2(Math.sin(targetY - currentY), Math.cos(targetY - currentY));
@@ -227,50 +220,100 @@ export const Globe: React.FC<GlobeProps> = ({
         3.5,
         delta
       );
-    } else if (autoRotate && !hoveredCityId) {
-      // Gentle cinematic idle rotation
+    } else if (autoRotate && !hoveredId && !selectedPropertyId) {
       globeGroupRef.current.rotation.y += delta * 0.07;
     }
   });
 
+  // Visual Fan Dispersion:
+  // When multiple live properties share identical coordinates from an agency,
+  // apply a deterministic, tiny visual fan offset ONLY for rendering.
+  // The underlying canonical property.latitude and longitude remain 100% untouched.
+  const dispersedProperties = useMemo(() => {
+    const coordsMap = new Map<string, AtlasProperty[]>();
+    for (const p of geocodedProperties) {
+      const key = `${p.latitude.toFixed(4)}_${p.longitude.toFixed(4)}`;
+      if (!coordsMap.has(key)) coordsMap.set(key, []);
+      coordsMap.get(key)!.push(p);
+    }
+
+    const result: Array<{ property: AtlasProperty; displayLat: number; displayLng: number }> = [];
+
+    coordsMap.forEach((group) => {
+      if (group.length === 1) {
+        result.push({
+          property: group[0],
+          displayLat: group[0].latitude,
+          displayLng: group[0].longitude
+        });
+      } else {
+        const count = group.length;
+        group.forEach((prop, i) => {
+          const angle = (i / count) * 2 * Math.PI;
+          const offsetDegree = 0.0022; // ~200m visual fan so all dots remain individually visible
+          result.push({
+            property: prop,
+            displayLat: prop.latitude + Math.sin(angle) * offsetDegree,
+            displayLng: prop.longitude + Math.cos(angle) * offsetDegree
+          });
+        });
+      }
+    });
+
+    return result;
+  }, [geocodedProperties, properties]);
+
   return (
     <group ref={globeGroupRef}>
-      {/* Real Earth Sphere with Geographic Continents & City Lights */}
+      {/* Real Earth Sphere with Topography & Night Lights */}
       <mesh material={earthMaterial}>
         <sphereGeometry args={[globeRadius, 64, 64]} />
       </mesh>
 
-      {/* Subtle Reference Latitude / Longitude Cartography Lines (Secondary Layer) */}
+      {/* Cartography reference lines */}
       <mesh>
         <sphereGeometry args={[globeRadius * 1.0008, 36, 18]} />
         <meshBasicMaterial
           color="#c5a880"
           wireframe
           transparent
-          opacity={0.045}
+          opacity={0.04}
         />
       </mesh>
 
       {/* Equator Coordinate Ring */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[globeRadius * 1.0012, globeRadius * 1.0028, 64]} />
-        <meshBasicMaterial color="#c5a880" transparent opacity={0.15} side={THREE.DoubleSide} />
+        <ringGeometry args={[globeRadius * 1.0012, globeRadius * 1.0025, 64]} />
+        <meshBasicMaterial color="#c5a880" transparent opacity={0.12} side={THREE.DoubleSide} />
       </mesh>
 
-      {/* Live Property Location & Hub Markers */}
-      {destinations.map((dest) => (
-        <CityMarker
-          key={dest.id}
-          destination={dest}
-          globeRadius={globeRadius}
-          isHovered={hoveredCityId === dest.id}
-          isSelected={selectedCity?.id === dest.id || selectedCity?.name === dest.name}
-          onHover={onHoverCity}
-          onSelect={onSelectCity}
-        />
-      ))}
+      {/* ====================================================
+          PURE LIVE PROPERTY CARTOGRAPHY (ZERO CLUSTERS)
+          Every valid live listing is rendered directly as its
+          own distinct, subtle, luxury cartographic point on Earth.
+          ==================================================== */}
+      {dispersedProperties.map(({ property, displayLat, displayLng }) => {
+        // Visual proxy with fan dispersion coordinates (canonical property data untouched)
+        const renderProperty: AtlasProperty = {
+          ...property,
+          latitude: displayLat,
+          longitude: displayLng
+        };
 
-      {/* Soft Ethereal Atmospheric Glow (seamlessly fading into dark page) */}
+        return (
+          <PropertyMarker
+            key={`prop-${property.id}`}
+            property={renderProperty}
+            globeRadius={globeRadius}
+            isHovered={hoveredId === property.id}
+            isSelected={selectedPropertyId === property.id}
+            onHover={onHoverId}
+            onSelect={onSelectProperty}
+          />
+        );
+      })}
+
+      {/* Soft Ethereal Atmospheric Glow */}
       <Atmosphere radius={globeRadius} />
     </group>
   );

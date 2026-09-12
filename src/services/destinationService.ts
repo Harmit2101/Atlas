@@ -1,149 +1,245 @@
 import { AtlasProperty } from '@/types/property';
 import { DestinationCluster } from '@/types/destination';
-import { MarketScore } from '@/types/market';
-
-// Standard country centroid coordinates for global territories
-const COUNTRY_COORDINATES: Record<string, { lat: number; lng: number; name: string }> = {
-  'US': { lat: 37.0902, lng: -95.7129, name: 'United States' },
-  'AE': { lat: 24.4539, lng: 54.3773, name: 'United Arab Emirates' },
-  'GB': { lat: 55.3781, lng: -3.4360, name: 'United Kingdom' },
-  'FR': { lat: 46.2276, lng: 2.2137, name: 'France' },
-  'ES': { lat: 40.4637, lng: -3.7492, name: 'Spain' },
-  'IT': { lat: 41.8719, lng: 12.5674, name: 'Italy' },
-  'DE': { lat: 51.1657, lng: 10.4515, name: 'Germany' },
-  'PT': { lat: 39.3999, lng: -8.2245, name: 'Portugal' },
-  'GR': { lat: 39.0742, lng: 21.8243, name: 'Greece' },
-  'CO': { lat: 4.5709, lng: -74.2973, name: 'Colombia' },
-  'CR': { lat: 9.7489, lng: -83.7534, name: 'Costa Rica' },
-  'PA': { lat: 8.5379, lng: -80.7821, name: 'Panama' },
-  'MX': { lat: 23.6345, lng: -102.5528, name: 'Mexico' },
-  'JP': { lat: 36.2048, lng: 138.2529, name: 'Japan' },
-  'CH': { lat: 46.8182, lng: 8.2275, name: 'Switzerland' },
-  'MC': { lat: 43.7384, lng: 7.4246, name: 'Monaco' },
-  'SG': { lat: 1.3521, lng: 103.8198, name: 'Singapore' },
-  'AU': { lat: -25.2744, lng: 133.7751, name: 'Australia' },
-  'ID': { lat: -0.7893, lng: 113.9213, name: 'Indonesia' },
-  'ZA': { lat: -30.5595, lng: 22.9375, name: 'South Africa' },
-  'GH': { lat: 7.9465, lng: -1.0232, name: 'Ghana' },
-  'TH': { lat: 15.8700, lng: 100.9925, name: 'Thailand' },
-  'BR': { lat: -14.2350, lng: -51.9253, name: 'Brazil' },
-  'CA': { lat: 56.1304, lng: -106.3468, name: 'Canada' }
-};
 
 /**
- * Derives dynamic destination clusters from live properties or market score data.
- * Transforms live inventory -> geographic clusters -> interactive 3D globe markers.
+ * Validates whether a property has usable numeric geographic coordinates.
+ * Discards null, undefined, NaN, and (0,0) coordinates without guessing or fabricating.
+ */
+export function isValidCoordinate(lat?: number | null, lng?: number | null): boolean {
+  if (lat == null || lng == null) return false;
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  if (isNaN(nLat) || isNaN(nLng)) return false;
+  // (0, 0) is "Null Island" — an unlocated placeholder, not a valid real estate location
+  if (nLat === 0 && nLng === 0) return false;
+  if (nLat < -90 || nLat > 90) return false;
+  if (nLng < -180 || nLng > 180) return false;
+  return true;
+}
+
+/**
+ * Calculates great-circle distance between two geographic coordinates in kilometers.
+ */
+export function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's mean radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Extracts the most relevant localized name and country from a live property's data.
+ */
+export function extractPropertyLocation(prop: AtlasProperty): { name: string; country: string } {
+  const country = (prop.country && prop.country !== 'Global Territory' && prop.country !== 'Global')
+    ? prop.country.trim()
+    : 'Verified Global MLS';
+
+  let name = (prop.city && prop.city !== 'Global Territory' && prop.city !== 'Global')
+    ? prop.city.trim()
+    : '';
+
+  if (!name && prop.locality) {
+    name = prop.locality.trim();
+  }
+
+  // If city is absent, inspect the raw address
+  if (!name && prop.address) {
+    const segments = prop.address.split(',').map(s => s.trim()).filter(Boolean);
+    if (segments.length >= 2) {
+      name = segments[segments.length - 1];
+    } else if (segments.length === 1) {
+      name = segments[0];
+    }
+  }
+
+  if (!name) {
+    name = country;
+  }
+
+  return { name, country };
+}
+
+/**
+ * Computes comprehensive cartography metrics from the current live property inventory.
+ */
+export function getCartographyStats(properties: AtlasProperty[] = []): {
+  totalListings: number;
+  geocodedCount: number;
+  nonGeocodedCount: number;
+  clusterCount: number;
+  uniqueLocationsCount: number;
+} {
+  const geocoded = properties.filter(p => isValidCoordinate(p.latitude, p.longitude));
+  const uniqueCoordKeys = new Set<string>();
+  for (const p of geocoded) {
+    const key = `${p.latitude.toFixed(4)}_${p.longitude.toFixed(4)}`;
+    uniqueCoordKeys.add(key);
+  }
+
+  const clusters = deriveDestinationClusters(properties);
+
+  return {
+    totalListings: properties.length,
+    geocodedCount: geocoded.length,
+    nonGeocodedCount: properties.length - geocoded.length,
+    clusterCount: clusters.length,
+    uniqueLocationsCount: uniqueCoordKeys.size
+  };
+}
+
+/**
+ * Derives dynamic destination clusters strictly and exclusively from currently loaded live properties.
+ * 
+ * Rules:
+ * 1. Takes all currently loaded live listings.
+ * 2. Discards listings without valid coordinates (no guessing, no fabrication, no fallback coordinates).
+ * 3. Uses an adaptive ~25km spatial proximity threshold for grouping nearby properties into regional clusters.
+ * 4. Each cluster stores the exact list of live `properties: AtlasProperty[]` belonging to it.
+ * 5. Computes cluster centroid (mean latitude, mean longitude) and live pricing/summary metrics.
+ * 6. ZERO static hubs, ZERO hardcoded coordinates, ZERO fake fallback inventory.
  */
 export function deriveDestinationClusters(
   properties: AtlasProperty[] = [],
-  marketScores: MarketScore[] = []
+  clusterRadiusKm = 25
 ): DestinationCluster[] {
-  const clusterMap = new Map<string, {
-    name: string;
-    country: string;
-    lats: number[];
-    lngs: number[];
-    prices: number[];
-    properties: AtlasProperty[];
-  }>();
-
-  // 1. Cluster real properties
-  for (const prop of properties) {
-    const cityName = prop.city || prop.country || 'Global Territory';
-    const countryKey = (prop.country || 'Global').toUpperCase();
-    const key = `${cityName.toLowerCase()}_${countryKey.toLowerCase()}`;
-
-    let cluster = clusterMap.get(key);
-    if (!cluster) {
-      cluster = {
-        name: cityName,
-        country: prop.country || countryKey,
-        lats: [],
-        lngs: [],
-        prices: [],
-        properties: []
-      };
-      clusterMap.set(key, cluster);
-    }
-
-    if (prop.latitude && prop.longitude && (prop.latitude !== 0 || prop.longitude !== 0)) {
-      cluster.lats.push(prop.latitude);
-      cluster.lngs.push(prop.longitude);
-    } else if (COUNTRY_COORDINATES[countryKey]) {
-      cluster.lats.push(COUNTRY_COORDINATES[countryKey].lat);
-      cluster.lngs.push(COUNTRY_COORDINATES[countryKey].lng);
-    }
-
-    if (prop.priceUsd) {
-      cluster.prices.push(prop.priceUsd);
-    }
-    cluster.properties.push(prop);
+  if (!properties || properties.length === 0) {
+    return [];
   }
 
-  const dynamicClusters: DestinationCluster[] = [];
+  // 1. Filter to live listings with strictly valid coordinates
+  const geocodedProperties = properties.filter(prop => 
+    isValidCoordinate(prop.latitude, prop.longitude)
+  );
 
-  clusterMap.forEach((cluster, key) => {
-    const avgLat = cluster.lats.length > 0 
-      ? cluster.lats.reduce((a, b) => a + b, 0) / cluster.lats.length 
-      : 25.0;
-    const avgLng = cluster.lngs.length > 0 
-      ? cluster.lngs.reduce((a, b) => a + b, 0) / cluster.lngs.length 
-      : 55.0;
+  if (geocodedProperties.length === 0) {
+    return [];
+  }
 
-    const avgPrice = cluster.prices.length > 0
-      ? Math.round(cluster.prices.reduce((a, b) => a + b, 0) / cluster.prices.length)
+  // 2. Spatial proximity clustering (adaptive ~25 km threshold)
+  interface IntermediateCluster {
+    lats: number[];
+    lngs: number[];
+    centroidLat: number;
+    centroidLng: number;
+    properties: AtlasProperty[];
+  }
+
+  const clusters: IntermediateCluster[] = [];
+
+  for (const prop of geocodedProperties) {
+    const lat = Number(prop.latitude);
+    const lng = Number(prop.longitude);
+
+    let nearestCluster: IntermediateCluster | null = null;
+    let minDistance = Infinity;
+
+    for (const cluster of clusters) {
+      const dist = haversineDistanceKm(cluster.centroidLat, cluster.centroidLng, lat, lng);
+      if (dist <= clusterRadiusKm && dist < minDistance) {
+        minDistance = dist;
+        nearestCluster = cluster;
+      }
+    }
+
+    if (nearestCluster) {
+      nearestCluster.properties.push(prop);
+      nearestCluster.lats.push(lat);
+      nearestCluster.lngs.push(lng);
+      // Recalculate cluster centroid dynamically
+      nearestCluster.centroidLat =
+        nearestCluster.lats.reduce((a, b) => a + b, 0) / nearestCluster.lats.length;
+      nearestCluster.centroidLng =
+        nearestCluster.lngs.reduce((a, b) => a + b, 0) / nearestCluster.lngs.length;
+    } else {
+      clusters.push({
+        lats: [lat],
+        lngs: [lng],
+        centroidLat: lat,
+        centroidLng: lng,
+        properties: [prop]
+      });
+    }
+  }
+
+  // 3. Transform intermediate clusters into DestinationCluster models
+  const destinationClusters: DestinationCluster[] = clusters.map((cluster, index) => {
+    const propCount = cluster.properties.length;
+    const avgLat = cluster.centroidLat;
+    const avgLng = cluster.centroidLng;
+
+    // Determine the most frequent name and country among cluster members
+    const nameFrequency = new Map<string, number>();
+    const countryFrequency = new Map<string, number>();
+    const validPrices: number[] = [];
+
+    for (const prop of cluster.properties) {
+      const { name, country } = extractPropertyLocation(prop);
+      nameFrequency.set(name, (nameFrequency.get(name) || 0) + 1);
+      countryFrequency.set(country, (countryFrequency.get(country) || 0) + 1);
+
+      if (prop.priceUsd && prop.priceUsd > 0) {
+        validPrices.push(prop.priceUsd);
+      }
+    }
+
+    // Pick top name (default to first property's city or country)
+    let topName = cluster.properties[0]?.city || cluster.properties[0]?.country || 'Verified Region';
+    let maxNameCount = 0;
+    nameFrequency.forEach((count, name) => {
+      if (count > maxNameCount) {
+        maxNameCount = count;
+        topName = name;
+      }
+    });
+
+    // Pick top country (default to first property's country)
+    let topCountry = cluster.properties[0]?.country || 'Verified Global MLS';
+    let maxCountryCount = 0;
+    countryFrequency.forEach((count, country) => {
+      if (count > maxCountryCount) {
+        maxCountryCount = count;
+        topCountry = country;
+      }
+    });
+
+    const avgPrice = validPrices.length > 0
+      ? Math.round(validPrices.reduce((a, b) => a + b, 0) / validPrices.length)
       : 0;
 
-    const id = key.replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
     const latDir = avgLat >= 0 ? 'N' : 'S';
     const lngDir = avgLng >= 0 ? 'E' : 'W';
     const coordsFormatted = `${Math.abs(avgLat).toFixed(4)}° ${latDir}, ${Math.abs(avgLng).toFixed(4)}° ${lngDir}`;
 
-    dynamicClusters.push({
+    const id = `cluster-${topName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${index}`;
+
+    // Clean representative image preview from live properties in cluster
+    const image = cluster.properties.find(p => p.images && p.images[0])?.images?.[0] || '';
+
+    return {
       id,
-      name: cluster.name,
-      country: cluster.country,
+      name: topName,
+      country: topCountry,
       latitude: avgLat,
       longitude: avgLng,
-      propertyCount: cluster.properties.length,
-      featured: cluster.properties.length > 1,
-      tagline: `Prime architectural opportunities in ${cluster.name}`,
-      description: `Active portfolio of ${cluster.properties.length} verified listings in ${cluster.name}, ${cluster.country}.`,
-      averagePrice: avgPrice > 0 ? `$${(avgPrice / 1000000).toFixed(1)}M` : 'Inquire',
-      image: cluster.properties[0]?.images[0] || 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1200&q=80',
+      propertyCount: propCount,
+      featured: propCount > 1,
+      tagline: `${propCount} active live ${propCount === 1 ? 'asset' : 'assets'} in ${topName}`,
+      description: `Active portfolio of ${propCount} verified live ${propCount === 1 ? 'listing' : 'listings'} in ${topName}, ${topCountry}.`,
+      averagePrice: avgPrice > 0 ? `$${(avgPrice / 1000000).toFixed(1)}M` : 'Price on Inquiry',
+      image,
       coordinatesFormatted: coordsFormatted,
       properties: cluster.properties
-    });
+    };
   });
 
-  // 2. If property inventory is currently filtering a single region, enrich with active market score countries
-  if (dynamicClusters.length < 8 && marketScores && marketScores.length > 0) {
-    const existingCountries = new Set(dynamicClusters.map(c => c.country.toUpperCase()));
-    for (const ms of marketScores.slice(0, 16)) {
-      const code = ms.country.toUpperCase();
-      if (!existingCountries.has(code) && COUNTRY_COORDINATES[code]) {
-        const coord = COUNTRY_COORDINATES[code];
-        const latDir = coord.lat >= 0 ? 'N' : 'S';
-        const lngDir = coord.lng >= 0 ? 'E' : 'W';
-
-        dynamicClusters.push({
-          id: `market-${ms.country.toLowerCase()}`,
-          name: ms.countryName,
-          country: coord.name,
-          latitude: coord.lat,
-          longitude: coord.lng,
-          propertyCount: ms.listingCount || 0,
-          featured: ms.score >= 85,
-          tagline: `Market Score: ${ms.score}/100 · Grade ${ms.grade}`,
-          description: `Global Property Index score ${ms.score}. Ownership access: ${ms.ownershipAccess}. Affordability: ${ms.affordability}.`,
-          averagePrice: `Score ${ms.score}`,
-          image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80',
-          coordinatesFormatted: `${Math.abs(coord.lat).toFixed(4)}° ${latDir}, ${Math.abs(coord.lng).toFixed(4)}° ${lngDir}`,
-          properties: []
-        });
-      }
-    }
-  }
-
-  return dynamicClusters.sort((a, b) => b.propertyCount - a.propertyCount);
+  // Sort descending by propertyCount
+  return destinationClusters.sort((a, b) => b.propertyCount - a.propertyCount);
 }

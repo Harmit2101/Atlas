@@ -7,6 +7,7 @@ import {
 import { GlobeScene } from '@/components/globe/GlobeScene';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useMarkets } from '@/hooks/useMarkets';
+import { useProperties } from '@/hooks/useProperties';
 import { deriveDestinationClusters } from '@/services/destinationService';
 import { DestinationCluster } from '@/types/destination';
 import { MarketScore } from '@/types/market';
@@ -14,14 +15,15 @@ import { MarketScore } from '@/types/market';
 export const MarketsPage: React.FC = () => {
   const navigate = useNavigate();
   const { scores, loading, error, refetch } = useMarkets();
+  const { properties } = useProperties({ pageSize: 24 });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<MarketScore | null>(null);
   const [sortOption, setSortOption] = useState<'score' | 'listings' | 'alpha'>('score');
 
-  // Derive dynamic destination clusters for the globe from the market score records
+  // Derive dynamic destination clusters for the globe from the live property inventory
   const destinations = useMemo(() => {
-    return deriveDestinationClusters([], scores);
-  }, [scores]);
+    return deriveDestinationClusters(properties);
+  }, [properties]);
 
   // Filtered and sorted scores
   const filteredScores = useMemo(() => {
@@ -84,16 +86,16 @@ export const MarketsPage: React.FC = () => {
               <Compass className="w-3.5 h-3.5" />
               <span>ACTIVE JURISDICTIONS</span>
             </span>
-            <span>{destinations.length} Hubs Plotted</span>
+            <span>
+              {properties.length} Live Listings · {properties.filter(p => p.latitude && p.longitude).length} Geolocated
+            </span>
           </div>
 
           <div className="w-full h-[460px] sm:h-[520px] relative">
             <GlobeScene
               height="h-full"
-              destinations={destinations}
-              onDestinationSelect={(dest) => {
-                navigate(`/explore?location=${encodeURIComponent(dest.name)}`);
-              }}
+              properties={properties}
+              totalListingsCount={properties.length}
               showHUD={false}
             />
           </div>

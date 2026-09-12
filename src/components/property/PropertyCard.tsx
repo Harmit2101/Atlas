@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bookmark, Bed, Bath, Maximize2, MapPin } from 'lucide-react';
+import { Bookmark, Bed, Bath, Maximize2, MapPin, ImageOff } from 'lucide-react';
 import { AtlasProperty } from '@/types/property';
 import { useSavedProperties } from '@/hooks/useSavedProperties';
 import { useAuth } from '@/hooks/useAuth';
@@ -37,35 +37,54 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
     toggleSave(property.id, property.sourceName);
   };
 
-  const displayImage = imageError || !property.images[0]
-    ? 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
-    : property.images[0];
+  const rawImageUrl = property.images && property.images.length > 0 ? property.images[0] : null;
+  const hasValidImage = Boolean(rawImageUrl) && !imageError;
 
   return (
     <>
-      <div className="group relative bg-[#111116] border border-white/[0.08] hover:border-[#c5a880]/40 rounded-sm overflow-hidden flex flex-col transition-all duration-500 hover:shadow-2xl">
+      <div id={`property-${property.id}`} className="group relative bg-[#111116] border border-white/[0.08] hover:border-[#c5a880]/40 rounded-sm overflow-hidden flex flex-col transition-all duration-500 hover:shadow-2xl">
         {/* Media Container */}
         <Link 
           to={`/property/${property.id}`} 
           className="relative aspect-[16/10] overflow-hidden bg-black/40 block"
           data-cursor="VIEW"
         >
-          {/* Blur skeleton placeholder while image loads */}
-          {!imageLoaded && (
-            <div className="absolute inset-0 bg-white/[0.04] animate-pulse" />
-          )}
+          {hasValidImage ? (
+            <>
+              {/* Blur skeleton placeholder while image loads */}
+              {!imageLoaded && (
+                <div className="absolute inset-0 bg-white/[0.04] animate-pulse" />
+              )}
 
-          <img
-            src={displayImage}
-            alt={property.title}
-            loading={priority ? 'eager' : 'lazy'}
-            onLoad={() => setImageLoaded(true)}
-            onError={() => setImageError(true)}
-            className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-105 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#111116] via-transparent to-black/30" />
+              <img
+                src={rawImageUrl!}
+                alt={property.title}
+                loading={priority ? 'eager' : 'lazy'}
+                onLoad={() => setImageLoaded(true)}
+                onError={() => setImageError(true)}
+                className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-105 ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#111116] via-transparent to-black/30" />
+            </>
+          ) : (
+            /* Tasteful, cinematic IMAGE UNAVAILABLE state — zero fake imagery */
+            <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d0d13] border border-white/[0.04] p-6 text-center select-none relative overflow-hidden group-hover:border-[#c5a880]/30 transition-colors">
+              <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:24px_24px]" />
+              
+              <div className="w-11 h-11 rounded-full bg-white/[0.02] border border-white/[0.08] flex items-center justify-center text-[#c5a880]/80 mb-2.5 shadow-inner">
+                <ImageOff className="w-4 h-4 text-[#c5a880]/70" />
+              </div>
+              
+              <div className="text-[10px] font-mono-luxury uppercase tracking-[0.25em] text-[#f4f2ec]/90 font-medium">
+                Image Unavailable
+              </div>
+              <div className="text-[8.5px] font-mono-luxury uppercase tracking-widest text-[#c5a880]/70 mt-1">
+                Live MLS Listing
+              </div>
+            </div>
+          )}
 
           {/* Status Pill */}
           <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
@@ -103,8 +122,8 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
           <div>
             {/* Location Line */}
             <div className="flex items-center gap-1.5 text-xs text-[#8e8d93] mb-1.5">
-              <MapPin className="w-3.5 h-3.5 text-[#c5a880]" />
-              <span>{property.city}, {property.country}</span>
+              <MapPin className="w-3.5 h-3.5 text-[#c5a880] shrink-0" />
+              <span className="truncate">{property.displayLocation || (property.city ? `${property.city}, ${property.country}` : property.country)}</span>
             </div>
 
             {/* Title */}

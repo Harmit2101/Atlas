@@ -7,9 +7,13 @@ const ALLOWED_ENDPOINT_PATTERN = /^(listings\/search|listings\/[a-zA-Z0-9_-]+|ma
 
 /**
  * Local development proxy middleware for Untera API.
- * Emulates the Vercel serverless proxy, protecting UNTERA_API_KEY from browser exposure
- * and completely bypassing CORS restrictions on localhost.
+ * Emulates the Vercel serverless proxy, protecting UNTERA_API_KEY from browser exposure,
+ * completely bypassing CORS restrictions on localhost, and caching responses in-memory
+ * to strictly honor the 15 req/min burst and 1,000 req/day quota.
  */
+const proxyCache = new Map<string, { body: string; status: number; timestamp: number }>();
+const PROXY_CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute server-side cache
+
 function unteraProxyPlugin(envApiKey?: string): Plugin {
   return {
     name: 'untera-local-proxy',
@@ -51,6 +55,18 @@ function unteraProxyPlugin(envApiKey?: string): Plugin {
             return;
           }
 
+          const cacheKey = `${cleanPath}${parsedUrl.search}`;
+          const cached = proxyCache.get(cacheKey);
+
+          // Return fresh cached server-side response
+          if (cached && Date.now() - cached.timestamp < PROXY_CACHE_TTL_MS) {
+            res.statusCode = cached.status;
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('X-Atlas-Cache', 'HIT');
+            res.end(cached.body);
+            return;
+          }
+
           const upstreamUrl = `https://api.untera.io/api/v1/${cleanPath}${parsedUrl.search}`;
 
           const upstreamResponse = await fetch(upstreamUrl, {
@@ -63,6 +79,23 @@ function unteraProxyPlugin(envApiKey?: string): Plugin {
 
           const status = upstreamResponse.status;
           const responseText = await upstreamResponse.text();
+
+          // Handle rate-limit gracefully using stale cache if available
+          if (status === 429 && cached) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('X-Atlas-Cache', 'STALE_RATE_LIMITED');
+            res.end(cached.body);
+            return;
+          }
+
+          if (status === 200) {
+            proxyCache.set(cacheKey, {
+              body: responseText,
+              status,
+              timestamp: Date.now()
+            });
+          }
 
           res.statusCode = status;
           res.setHeader('Content-Type', 'application/json');

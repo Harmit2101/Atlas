@@ -53,6 +53,9 @@ export interface AtlasProperty {
   currency: string;
   country: string;
   city: string;
+  locality?: string;
+  region?: string;
+  displayLocation?: string;
   address?: string;
   destinationId?: string;
   latitude: number;
@@ -66,6 +69,7 @@ export interface AtlasProperty {
   yearBuilt?: number;
   architecturalStyle?: string;
   images: string[];
+  imageUrl?: string;
   features: string[];
   curatorNotes?: string;
   listedAt?: string;
