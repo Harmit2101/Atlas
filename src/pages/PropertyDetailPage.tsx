@@ -12,6 +12,7 @@ import { AuthModal } from '@/components/auth/AuthModal';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { SpatialExperienceSection } from '@/components/property/spatial/SpatialExperienceSection';
 
 interface ThumbnailButtonProps {
   src: string;
@@ -323,6 +324,15 @@ export const PropertyDetailPage: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
+
+      {/* 3D Spatial Intelligence Experience */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <SpatialExperienceSection
+          property={property}
+          selectedImageIndex={selectedImageIndex}
+          onSelectImage={handleSelectThumbnail}
+        />
       </div>
 
       {/* Main Content & Specs Grid */}
