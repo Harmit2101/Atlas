@@ -59,6 +59,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
               <img
                 src={rawImageUrl!}
                 alt={property.title}
+                crossOrigin="anonymous"
                 loading={priority ? 'eager' : 'lazy'}
                 onLoad={() => setImageLoaded(true)}
                 onError={() => setImageError(true)}

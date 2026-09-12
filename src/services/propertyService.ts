@@ -47,6 +47,67 @@ export function normalizeListingImages(raw: UnteraRawListing): string[] {
 }
 
 /**
+ * Normalizes bedroom count from raw Untera data.
+ * Checks direct numeric/string fields and falls back to genuine title/subtype mentions if present.
+ * Never fabricates numbers.
+ */
+export function normalizeBedroomCount(raw: UnteraRawListing): number {
+  const direct = raw.bedrooms ?? raw.beds ?? (raw as any).num_bedrooms ?? (raw as any).bedroom_count;
+  if (direct != null && direct !== '') {
+    const parsed = Number(direct);
+    if (!isNaN(parsed) && parsed > 0) return Math.round(parsed);
+  }
+
+  // Parse genuine provider title if listing title explicitly defines bedroom count (e.g. "4-BEDROOM")
+  const title = String(raw.title || '');
+  const match = title.match(/(\d+)\s*[-]?\s*(?:bed|bedroom|chambre|dormitorio|br)\b/i);
+  if (match) {
+    const fromTitle = parseInt(match[1], 10);
+    if (!isNaN(fromTitle) && fromTitle > 0 && fromTitle <= 50) {
+      return fromTitle;
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Normalizes bathroom count from raw Untera data.
+ * Correctly parses Canadian/Quebec Centris integer encodings (e.g. 31 => 3 full + 1 half = 3.5 baths)
+ * and direct fractional/decimal counts.
+ * Never fabricates numbers.
+ */
+export function normalizeBathroomCount(raw: UnteraRawListing): number {
+  const direct = raw.bathrooms ?? raw.baths ?? (raw as any).num_bathrooms ?? (raw as any).bathroom_count;
+  if (direct != null && direct !== '') {
+    const num = Number(direct);
+    if (!isNaN(num) && num > 0) {
+      // Handle Canadian/Quebec MLS two-digit integer encoding (e.g. 31 => 3 full + 1 powder = 3.5)
+      if (Number.isInteger(num) && num >= 11 && num <= 99) {
+        const full = Math.floor(num / 10);
+        const half = num % 10;
+        if (half >= 1 && half <= 4 && full >= 1 && full <= 9) {
+          return full + half * 0.5;
+        }
+      }
+      return num;
+    }
+  }
+
+  // Parse genuine provider title if listing title explicitly defines bathroom count (e.g. "3.5 Bath")
+  const title = String(raw.title || '');
+  const match = title.match(/(\d+(?:\.\d+)?)\s*[-]?\s*(?:bath|bathroom|salle de bain)\b/i);
+  if (match) {
+    const fromTitle = parseFloat(match[1]);
+    if (!isNaN(fromTitle) && fromTitle > 0 && fromTitle <= 30) {
+      return fromTitle;
+    }
+  }
+
+  return 0;
+}
+
+/**
  * Normalizes a raw Untera API listing into the consistent AtlasProperty domain model.
  * Strictly preserves genuine Untera data with zero fabricated metrics or imagery.
  */
@@ -124,8 +185,8 @@ export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
     longitude: lng,
     propertyType: cleanPropType,
     transactionType,
-    bedrooms: Number(raw.bedrooms ?? raw.beds ?? 0),
-    bathrooms: Number(raw.bathrooms ?? raw.baths ?? 0),
+    bedrooms: normalizeBedroomCount(raw),
+    bathrooms: normalizeBathroomCount(raw),
     areaSqm,
     areaSqft,
     yearBuilt: raw.year_built || undefined,
@@ -247,6 +308,12 @@ export function resolveListingIdCandidates(id: string): string[] {
     const prefix = prefixMatch[1];
     const rest = prefixMatch[2];
     candidates.push(prefix + rest.replace(/_/g, '-'));
+  }
+
+  // Single provider prefix variant: replace first hyphen with underscore (e.g. engelvoelkers-107115b3-... => engelvoelkers_107115b3-...)
+  const firstHyphenMatch = id.match(/^([a-z0-9]+)-(.*)$/i);
+  if (firstHyphenMatch) {
+    candidates.push(`${firstHyphenMatch[1]}_${firstHyphenMatch[2]}`);
   }
 
   // Hyphenated variant (replace all underscores)

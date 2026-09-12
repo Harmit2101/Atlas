@@ -51,6 +51,7 @@ const ThumbnailButton: React.FC<ThumbnailButtonProps> = ({
         src={src}
         alt={`Listing view ${index + 1}`}
         loading="lazy"
+        crossOrigin="anonymous"
         onLoad={() => setLoaded(true)}
         onError={() => setHasError(true)}
         className={`w-full h-full object-cover transition-opacity duration-300 ${
@@ -244,6 +245,7 @@ export const PropertyDetailPage: React.FC = () => {
                 key={activeHeroUrl}
                 src={activeHeroUrl}
                 alt={property.title}
+                crossOrigin="anonymous"
                 onLoad={() => setHeroImageLoaded(true)}
                 onError={() => setHeroImageError(true)}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${
@@ -348,7 +350,7 @@ export const PropertyDetailPage: React.FC = () => {
                   <span>Bedrooms</span>
                 </div>
                 <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
-                  {property.bedrooms > 0 ? `${property.bedrooms} ${property.bedrooms === 1 ? 'Bedroom' : 'Bedrooms'}` : 'Not Listed'}
+                  {property.bedrooms > 0 ? `${property.bedrooms} ${property.bedrooms === 1 ? 'Bedroom' : 'Bedrooms'}` : 'Not Disclosed'}
                 </div>
               </div>
 
@@ -358,7 +360,7 @@ export const PropertyDetailPage: React.FC = () => {
                   <span>Bathrooms</span>
                 </div>
                 <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
-                  {property.bathrooms > 0 ? `${property.bathrooms} ${property.bathrooms === 1 ? 'Bath' : 'Baths'}` : 'Not Listed'}
+                  {property.bathrooms > 0 ? `${property.bathrooms} ${property.bathrooms === 1 ? 'Bath' : 'Baths'}` : 'Not Disclosed'}
                 </div>
               </div>
 
@@ -368,7 +370,7 @@ export const PropertyDetailPage: React.FC = () => {
                   <span>Living Space</span>
                 </div>
                 <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
-                  {property.areaSqft > 0 ? `${property.areaSqft.toLocaleString()} sq ft` : 'Not Listed'}
+                  {property.areaSqft > 0 ? `${property.areaSqft.toLocaleString()} sq ft` : 'Not Disclosed'}
                 </div>
                 {property.areaSqm > 0 && (
                   <div className="text-[10px] text-[#8e8d93]">({property.areaSqm} m²)</div>
@@ -381,7 +383,7 @@ export const PropertyDetailPage: React.FC = () => {
                   <span>Completed</span>
                 </div>
                 <div className="font-mono-luxury text-lg text-[#f4f2ec] font-semibold">
-                  {property.yearBuilt || 'Not Listed'}
+                  {property.yearBuilt || 'Not Disclosed'}
                 </div>
               </div>
             </div>

@@ -17,7 +17,7 @@ export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
   selectedIndex: externalSelectedIndex = 0,
   onSelectImage,
   className = '',
-  height = 'h-[440px] sm:h-[520px]'
+  height = 'h-[360px] sm:h-[480px] lg:h-[520px]'
 }) => {
   const [internalIndex, setInternalIndex] = useState(externalSelectedIndex);
   const [controlsKey, setControlsKey] = useState(0);
@@ -117,7 +117,7 @@ export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
 
       {/* R3F Three.js Canvas */}
       <Canvas
-        camera={{ position: [0, 0, 5.2], fov: 44 }}
+        camera={{ position: [0, 0, 4.3], fov: 38 }}
         dpr={[1, 1.5]}
         gl={{
           antialias: true,
@@ -129,18 +129,19 @@ export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
         }}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[0, 6, 8]} intensity={1.4} color="#ffffff" />
-        <pointLight position={[0, 0, 0]} intensity={0.5} color="#c5a880" />
+        <ambientLight intensity={1.0} />
+        <directionalLight position={[0, 6, 8]} intensity={1.2} color="#ffffff" />
+        <pointLight position={[0, 0, 1]} intensity={0.6} color="#c5a880" />
 
         <OrbitControls
           key={controlsKey}
           enableDamping
           dampingFactor={0.06}
-          minDistance={2.5}
-          maxDistance={9.5}
-          maxPolarAngle={Math.PI / 1.95}
-          minPolarAngle={Math.PI / 2.2}
+          target={[0, 0, 0]}
+          minDistance={2.2}
+          maxDistance={7.5}
+          maxPolarAngle={Math.PI / 1.92}
+          minPolarAngle={Math.PI / 2.15}
           rotateSpeed={0.55}
         />
 

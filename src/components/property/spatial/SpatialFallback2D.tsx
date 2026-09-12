@@ -66,7 +66,7 @@ export const SpatialFallback2D: React.FC<SpatialFallback2DProps> = ({
             <span>Beds</span>
           </div>
           <div className="font-mono-luxury text-sm text-[#f4f2ec] font-medium">
-            {property.bedrooms > 0 ? property.bedrooms : 'Not Listed'}
+            {property.bedrooms > 0 ? property.bedrooms : 'Not Disclosed'}
           </div>
         </div>
 
@@ -76,7 +76,7 @@ export const SpatialFallback2D: React.FC<SpatialFallback2DProps> = ({
             <span>Baths</span>
           </div>
           <div className="font-mono-luxury text-sm text-[#f4f2ec] font-medium">
-            {property.bathrooms > 0 ? property.bathrooms : 'Not Listed'}
+            {property.bathrooms > 0 ? property.bathrooms : 'Not Disclosed'}
           </div>
         </div>
       </div>
