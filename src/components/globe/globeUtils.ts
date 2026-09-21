@@ -15,3 +15,18 @@ export function latLonToVector3(lat: number, lon: number, radius: number): THREE
   const y = radius * Math.cos(phi);
   return new THREE.Vector3(x, y, z);
 }
+
+/**
+ * Converts a 3D Cartesian Vector3 on a sphere into latitude and longitude coordinates in degrees.
+ * 
+ * @param v Cartesian Vector3
+ * @param radius Radius of the sphere
+ */
+export function vector3ToLatLon(v: THREE.Vector3, radius: number): { lat: number; lon: number } {
+  const phi = Math.acos(Math.min(Math.max(v.y / radius, -1), 1));
+  const lat = 90 - (phi * 180 / Math.PI);
+  let theta = Math.atan2(v.z, -v.x);
+  if (theta < 0) theta += 2 * Math.PI;
+  const lon = (theta * 180 / Math.PI) - 180;
+  return { lat, lon };
+}

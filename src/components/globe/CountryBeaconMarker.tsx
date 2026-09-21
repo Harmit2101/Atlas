@@ -47,7 +47,7 @@ export const CountryBeaconMarker: React.FC<CountryBeaconMarkerProps> = ({
     groupRef.current.getWorldPosition(tempPos);
     const normal = tempPos.clone().normalize();
     tempCameraDir.subVectors(camera.position, tempPos).normalize();
-    return normal.dot(tempCameraDir) > 0.15;
+    return normal.dot(tempCameraDir) > 0.05;
   }, [camera, tempPos, tempCameraDir]);
 
   // Sync internal hover state with parent isHovered
@@ -121,7 +121,7 @@ export const CountryBeaconMarker: React.FC<CountryBeaconMarkerProps> = ({
             onSelect(beacon);
           }}
         >
-          <circleGeometry args={[0.048, 16]} />
+          <circleGeometry args={[0.075, 16]} />
           <meshBasicMaterial
             transparent
             opacity={0}

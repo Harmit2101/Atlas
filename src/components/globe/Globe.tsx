@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { AtlasProperty } from '@/types/property';
@@ -7,6 +7,7 @@ import { PropertyMarker } from './PropertyMarker';
 import { CountryBeaconMarker } from './CountryBeaconMarker';
 import { Atmosphere } from './Atmosphere';
 import { isValidCoordinate } from '@/services/destinationService';
+import { latLonToVector3 } from './globeUtils';
 
 interface GlobeProps {
   properties?: AtlasProperty[];
@@ -19,6 +20,7 @@ interface GlobeProps {
   onSelectProperty?: (property: AtlasProperty) => void;
   onSelectCountry?: (beacon: CountryBeacon) => void;
   autoRotate?: boolean;
+  groupRef?: React.RefObject<THREE.Group | null>;
 }
 
 // Vertex shader for cinematic Earth sphere
@@ -109,10 +111,12 @@ export const Globe: React.FC<GlobeProps> = ({
   onHoverId,
   onSelectProperty,
   onSelectCountry,
-  autoRotate = true
+  autoRotate = true,
+  groupRef
 }) => {
-  const globeGroupRef = useRef<THREE.Group>(null);
-  const targetRotationRef = useRef<{ x: number; y: number } | null>(null);
+  const internalGroupRef = useRef<THREE.Group>(null);
+  const globeGroupRef = (groupRef || internalGroupRef) as React.RefObject<THREE.Group>;
+  const pointerDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const timeRef = useRef<number>(0);
 
   const [texturesLoaded, setTexturesLoaded] = useState(false);
@@ -190,61 +194,39 @@ export const Globe: React.FC<GlobeProps> = ({
     return properties.filter(p => isValidCoordinate(p.latitude, p.longitude));
   }, [properties]);
 
-  // Smoothly face selected country or property if explicitly selected
-  useEffect(() => {
-    if (selectedCountryCode && globeGroupRef.current) {
-      const beacon = countryBeacons.find(b => b.country.toUpperCase() === selectedCountryCode.toUpperCase());
-      if (beacon) {
-        const targetPhi = (90 - beacon.latitude) * (Math.PI / 180);
-        const targetTheta = (beacon.longitude + 180) * (Math.PI / 180);
+  // Handle click on the Earth sphere surface to detect and select the nearest country
+  const handleGlobeClick = useCallback((worldPoint: THREE.Vector3) => {
+    if (!globeGroupRef.current || !countryBeacons.length || !onSelectCountry) return;
 
-        const targetY = -targetTheta + Math.PI / 2;
-        const targetX = beacon.latitude * (Math.PI / 180);
+    // Convert click point in world space to globe group local space
+    const localPoint = globeGroupRef.current.worldToLocal(worldPoint.clone());
 
-        targetRotationRef.current = { x: targetX, y: targetY };
-        return;
+    let closestBeacon: CountryBeacon | null = null;
+    let minDistance = Infinity;
+
+    for (const beacon of countryBeacons) {
+      const beaconPos = latLonToVector3(beacon.latitude, beacon.longitude, globeRadius);
+      const dist = localPoint.distanceTo(beaconPos);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestBeacon = beacon;
       }
     }
 
-    if (selectedPropertyId && globeGroupRef.current) {
-      const prop = geocodedProperties.find(p => p.id === selectedPropertyId);
-      if (prop) {
-        const targetPhi = (90 - prop.latitude) * (Math.PI / 180);
-        const targetTheta = (prop.longitude + 180) * (Math.PI / 180);
-
-        const targetY = -targetTheta + Math.PI / 2;
-        const targetX = prop.latitude * (Math.PI / 180);
-
-        targetRotationRef.current = { x: targetX, y: targetY };
-      }
+    // Radius 1.55: distance < 0.85 covers any click within ~30 degrees of a country centroid
+    if (closestBeacon && minDistance < 0.85) {
+      onSelectCountry(closestBeacon);
     }
-  }, [selectedCountryCode, countryBeacons, selectedPropertyId, geocodedProperties]);
+  }, [countryBeacons, globeRadius, onSelectCountry, globeGroupRef]);
 
-  // Frame update: smooth rotation damping and calm continuous planetary rotation
+  // Frame update: calm continuous planetary rotation when idling in global orbit
   useFrame((_, delta) => {
     timeRef.current += delta;
     earthMaterial.uniforms.uTime.value = timeRef.current;
 
     if (!globeGroupRef.current) return;
 
-    if (targetRotationRef.current) {
-      const currentY = globeGroupRef.current.rotation.y;
-      const targetY = targetRotationRef.current.y;
-      const diffY = Math.atan2(Math.sin(targetY - currentY), Math.cos(targetY - currentY));
-
-      globeGroupRef.current.rotation.y = THREE.MathUtils.damp(
-        currentY,
-        currentY + diffY,
-        3.5,
-        delta
-      );
-      globeGroupRef.current.rotation.x = THREE.MathUtils.damp(
-        globeGroupRef.current.rotation.x,
-        targetRotationRef.current.x,
-        3.5,
-        delta
-      );
-    } else if (autoRotate && !hoveredId && !selectedPropertyId) {
+    if (autoRotate && !hoveredId && !selectedPropertyId && !selectedCountryCode) {
       globeGroupRef.current.rotation.y += delta * 0.07;
     }
   });
@@ -292,6 +274,17 @@ export const Globe: React.FC<GlobeProps> = ({
       {/* Real Earth Sphere with Topography & Night Lights */}
       <mesh
         material={earthMaterial}
+        onPointerDown={(e) => {
+          pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+        }}
+        onPointerUp={(e) => {
+          const dx = Math.abs(e.clientX - pointerDownPosRef.current.x);
+          const dy = Math.abs(e.clientY - pointerDownPosRef.current.y);
+          // Distinguish genuine click from mouse drag (> 6px)
+          if (dx > 6 || dy > 6) return;
+          e.stopPropagation();
+          handleGlobeClick(e.point);
+        }}
         onPointerMove={(e) => {
           // Stop ray from penetrating through planet to backside markers
           e.stopPropagation();

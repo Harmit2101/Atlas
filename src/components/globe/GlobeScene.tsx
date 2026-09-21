@@ -16,26 +16,164 @@ import {
   recordContextLoss, 
   recordContextRestored 
 } from '@/services/webglDiagnostics';
+import { latLonToVector3 } from './globeUtils';
 
-// Smooth Three.js camera dolly zoom between planetary orbit and satellite lock-on
-function CameraDollyController({
-  isZoomed,
-  controlsRef
-}: {
-  isZoomed: boolean;
+interface GlobeCameraControllerProps {
+  isZoomed?: boolean;
+  selectedCountryCode?: string | null;
+  selectedPropertyId?: string | null;
+  countryBeacons?: CountryBeacon[];
+  properties?: AtlasProperty[];
+  globeRadius?: number;
+  globeGroupRef: React.RefObject<THREE.Group | null>;
   controlsRef: React.RefObject<any>;
-}) {
+}
+
+// Smooth Three.js camera fly-to controller focusing directly on selected countries/properties
+function GlobeCameraController({
+  isZoomed = false,
+  selectedCountryCode = null,
+  selectedPropertyId = null,
+  countryBeacons = [],
+  properties = [],
+  globeRadius = 1.55,
+  globeGroupRef,
+  controlsRef
+}: GlobeCameraControllerProps) {
   const { camera } = useThree();
+  const animatingRef = useRef(false);
+  const targetPosRef = useRef<THREE.Vector3 | null>(null);
+  const prevTargetKeyRef = useRef<string | null>(null);
 
+  // Derive unique key for current focus target
+  const targetKey = useMemo(() => {
+    if (selectedCountryCode) return `country:${selectedCountryCode.toUpperCase()}`;
+    if (selectedPropertyId) return `prop:${selectedPropertyId}`;
+    if (isZoomed) return 'zoomed:generic';
+    return 'orbit:global';
+  }, [selectedCountryCode, selectedPropertyId, isZoomed]);
+
+  // When target changes, calculate target position in 3D world space
+  useEffect(() => {
+    if (targetKey === prevTargetKeyRef.current) return;
+    prevTargetKeyRef.current = targetKey;
+
+    let targetLat: number | null = null;
+    let targetLng: number | null = null;
+    let targetDist = 5.8;
+
+    if (selectedCountryCode) {
+      const beacon = countryBeacons.find(
+        (b) => b.country.toUpperCase() === selectedCountryCode.toUpperCase()
+      );
+      if (beacon) {
+        targetLat = beacon.latitude;
+        targetLng = beacon.longitude;
+        targetDist = 3.25;
+      }
+    } else if (selectedPropertyId) {
+      const prop = properties.find((p) => p.id === selectedPropertyId);
+      if (prop && isValidCoordinate(prop.latitude, prop.longitude)) {
+        targetLat = prop.latitude;
+        targetLng = prop.longitude;
+        targetDist = 2.65;
+      }
+    } else if (isZoomed) {
+      targetDist = 3.4;
+    }
+
+    if (targetLat !== null && targetLng !== null) {
+      // Calculate Cartesian coordinates in globe local space
+      const localPos = latLonToVector3(targetLat, targetLng, globeRadius);
+
+      // Transform to world space using globe group's current orientation
+      const worldPos = localPos.clone();
+      if (globeGroupRef.current) {
+        globeGroupRef.current.updateMatrixWorld();
+        worldPos.applyMatrix4(globeGroupRef.current.matrixWorld);
+      }
+
+      const dir = worldPos.clone().normalize();
+      targetPosRef.current = dir.multiplyScalar(targetDist);
+      animatingRef.current = true;
+    } else {
+      // Return to global orbit: retain current direction angle, just dolly out to orbit distance
+      const dir = camera.position.clone().normalize();
+      targetPosRef.current = dir.multiplyScalar(targetDist);
+      animatingRef.current = true;
+    }
+  }, [
+    targetKey,
+    selectedCountryCode,
+    selectedPropertyId,
+    isZoomed,
+    countryBeacons,
+    properties,
+    globeRadius,
+    globeGroupRef,
+    camera
+  ]);
+
+  // Cancel programmatic camera animation immediately if user starts manual orbit drag
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const handleStart = () => {
+      animatingRef.current = false;
+    };
+
+    controls.addEventListener('start', handleStart);
+    return () => {
+      controls.removeEventListener('start', handleStart);
+    };
+  }, [controlsRef]);
+
+  // Frame loop: smooth great-circle slerp and distance damping
   useFrame((_, delta) => {
-    // When zoomed in, target orbit distance is ~3.4. When in global view, ~5.8.
-    const targetDistance = isZoomed ? 3.4 : 5.8;
-    const currentDistance = camera.position.length();
+    if (!animatingRef.current || !targetPosRef.current) return;
 
-    if (Math.abs(currentDistance - targetDistance) > 0.01) {
-      const newDistance = THREE.MathUtils.damp(currentDistance, targetDistance, 2.8, delta);
-      camera.position.setLength(newDistance);
+    const currentPos = camera.position;
+    const targetPos = targetPosRef.current;
+
+    const currentDist = currentPos.length();
+    const targetDist = targetPos.length();
+
+    const currentDir = currentPos.clone().normalize();
+    const targetDir = targetPos.clone().normalize();
+
+    // Responsive damping parameters
+    const rotSpeed = 1 - Math.exp(-4.5 * delta);
+    const distSpeed = 3.8;
+
+    // Handle near-antipodal directions safely
+    let nextDir: THREE.Vector3;
+    const dot = currentDir.dot(targetDir);
+    if (dot < -0.99) {
+      const perp = new THREE.Vector3(-currentDir.z, 0, currentDir.x).normalize();
+      if (perp.lengthSq() < 0.01) perp.set(1, 0, 0);
+      const mid = currentDir.clone().add(perp).normalize();
+      nextDir = currentDir.clone().lerp(mid, rotSpeed).normalize();
+    } else {
+      nextDir = currentDir.clone().lerp(targetDir, rotSpeed).normalize();
+    }
+
+    const nextDist = THREE.MathUtils.damp(currentDist, targetDist, distSpeed, delta);
+    const nextPos = nextDir.multiplyScalar(nextDist);
+
+    camera.position.copy(nextPos);
+    camera.lookAt(0, 0, 0);
+    controlsRef.current?.target.set(0, 0, 0);
+    controlsRef.current?.update();
+
+    // Check convergence threshold
+    const distToTarget = camera.position.distanceTo(targetPos);
+    if (distToTarget < 0.015) {
+      camera.position.copy(targetPos);
+      camera.lookAt(0, 0, 0);
+      controlsRef.current?.target.set(0, 0, 0);
       controlsRef.current?.update();
+      animatingRef.current = false;
     }
   });
 
@@ -81,6 +219,7 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
   const glRef = useRef<any>(null);
   const controlsRef = useRef<any>(null);
+  const globeGroupRef = useRef<THREE.Group>(null);
 
   const handleContextLost = useCallback((e: Event) => {
     e.preventDefault();
@@ -238,14 +377,21 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
           {/* Restrained celestial starfield */}
           <CelestialStars radius={45} depth={25} count={500} speed={0.2} />
 
-          {/* Smooth camera dolly controller */}
-          <CameraDollyController
-            isZoomed={isZoomed || Boolean(selectedCountryCode)}
+          {/* Smooth camera fly-to controller focusing directly on countries/properties */}
+          <GlobeCameraController
+            isZoomed={isZoomed}
+            selectedCountryCode={selectedCountryCode}
+            selectedPropertyId={selectedPropertyId}
+            countryBeacons={countryBeacons}
+            properties={properties}
+            globeRadius={1.55}
+            globeGroupRef={globeGroupRef}
             controlsRef={controlsRef}
           />
 
           <Suspense fallback={null}>
             <Globe
+              groupRef={globeGroupRef}
               properties={properties}
               countryBeacons={countryBeacons}
               globeRadius={1.55}
@@ -266,8 +412,8 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
             maxDistance={7.0}
             rotateSpeed={0.45}
             dampingFactor={0.08}
-            minPolarAngle={Math.PI / 3.4}
-            maxPolarAngle={(2.3 * Math.PI) / 3.4}
+            minPolarAngle={0.08}
+            maxPolarAngle={Math.PI - 0.08}
           />
         </Canvas>
         </>

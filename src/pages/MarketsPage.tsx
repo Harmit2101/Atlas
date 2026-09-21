@@ -48,10 +48,10 @@ export const MarketsPage: React.FC = () => {
 
   const handleCountryClick = (item: MarketScore) => {
     setSelectedCountry(item);
-    // Smooth transition into Explore filtered to this sovereign market at $300k+ luxury floor
+    // Smooth transition into Explore after completing 3D planetary zoom animation
     setTimeout(() => {
       navigate(`/explore?country=${encodeURIComponent(item.country)}&minPrice=300000`);
-    }, 650);
+    }, 1200);
   };
 
   return (
