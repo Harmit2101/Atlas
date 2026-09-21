@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { PhotoImmersionRotunda } from './PhotoImmersionRotunda';
 import { Images, ChevronLeft, ChevronRight, RotateCcw, ImageOff, Sparkles } from 'lucide-react';
+
+import { 
+  registerCanvasMount, 
+  registerCanvasUnmount, 
+  recordContextLoss, 
+  recordContextRestored 
+} from '@/services/webglDiagnostics';
+import { disposePhotoTextureCache } from './PhotoImmersionRotunda';
 
 interface PhotoImmersionSceneProps {
   images: string[];
@@ -10,6 +18,7 @@ interface PhotoImmersionSceneProps {
   onSelectImage?: (index: number) => void;
   className?: string;
   height?: string;
+  onContextLost?: () => void;
 }
 
 export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
@@ -17,10 +26,57 @@ export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
   selectedIndex: externalSelectedIndex = 0,
   onSelectImage,
   className = '',
-  height = 'h-[360px] sm:h-[480px] lg:h-[520px]'
+  height = 'h-[360px] sm:h-[480px] lg:h-[520px]',
+  onContextLost
 }) => {
   const [internalIndex, setInternalIndex] = useState(externalSelectedIndex);
   const [controlsKey, setControlsKey] = useState(0);
+  const [isContextLost, setIsContextLost] = useState(false);
+  const canvasIdRef = useRef(`photo-immersion-${Math.random().toString(36).slice(2, 8)}`);
+  const canvasElRef = useRef<HTMLCanvasElement | null>(null);
+  const glRef = useRef<any>(null);
+
+  // Register Canvas Lifecycle for WebGL forensics
+  useEffect(() => {
+    const canvasId = canvasIdRef.current;
+    registerCanvasMount(canvasId, 'photo-immersion');
+
+    return () => {
+      registerCanvasUnmount(canvasId);
+      disposePhotoTextureCache();
+
+      // Clean up event listeners on unmount
+      const el = canvasElRef.current;
+      if (el) {
+        el.removeEventListener('webglcontextlost', handleContextLost);
+        el.removeEventListener('webglcontextrestored', handleContextRestored);
+      }
+
+      // Explicitly release hardware WebGL context on unmount
+      const gl = glRef.current;
+      if (gl) {
+        try {
+          const loseContext = gl.getExtension('WEBGL_lose_context');
+          if (loseContext) {
+            loseContext.loseContext();
+          }
+          gl.dispose();
+        } catch {}
+      }
+    };
+  }, []);
+
+  const handleContextLost = useCallback((e: Event) => {
+    e.preventDefault();
+    recordContextLoss(canvasIdRef.current, 'photo-immersion');
+    setIsContextLost(true);
+    onContextLost?.();
+  }, [onContextLost]);
+
+  const handleContextRestored = useCallback(() => {
+    recordContextRestored(canvasIdRef.current, 'photo-immersion');
+    setIsContextLost(false);
+  }, []);
 
   useEffect(() => {
     setInternalIndex(externalSelectedIndex);
@@ -65,6 +121,29 @@ export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
         <div className="text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]/70 mt-1">
           Listing syndicate provided 0 photographic assets
         </div>
+      </div>
+    );
+  }
+
+  if (isContextLost) {
+    return (
+      <div className={`relative w-full ${height} bg-[#08080a] border border-white/[0.08] rounded-sm flex flex-col items-center justify-center p-8 text-center select-none ${className}`}>
+        <div className="text-xs font-mono-luxury uppercase tracking-[0.3em] text-[#c5a880] mb-2 font-medium">
+          SPATIAL EXPERIENCE TEMPORARILY UNAVAILABLE
+        </div>
+        <p className="text-xs text-[#8e8d93] max-w-md mb-4 font-light">
+          The browser GPU freed rendering resources during navigation. Click below to reinitialize the 3D rotunda.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setIsContextLost(false);
+            setControlsKey(k => k + 1);
+          }}
+          className="px-5 py-2 rounded bg-[#111116] hover:bg-[#15151c] text-[#f4f2ec] border border-[#c5a880]/50 hover:border-[#c5a880] font-mono-luxury text-xs uppercase tracking-widest transition-all"
+        >
+          Reinitialize Experience
+        </button>
       </div>
     );
   }
@@ -125,7 +204,13 @@ export const PhotoImmersionScene: React.FC<PhotoImmersionSceneProps> = ({
           powerPreference: 'high-performance'
         }}
         onCreated={({ gl }) => {
+          glRef.current = gl;
           gl.setClearColor(0x08080a, 1);
+          const canvasEl = gl.domElement;
+          canvasElRef.current = canvasEl;
+
+          canvasEl.addEventListener('webglcontextlost', handleContextLost, false);
+          canvasEl.addEventListener('webglcontextrestored', handleContextRestored, false);
         }}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >

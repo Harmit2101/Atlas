@@ -603,3 +603,27 @@ CREATE POLICY "Admins manage all referrals"
   ON public.referrals FOR ALL USING (public.is_admin());
 CREATE POLICY "Admins manage all commission records"
   ON public.commission_records FOR ALL USING (public.is_admin());
+
+-- ==============================================================================
+-- SECURITY ENFORCEMENT: PREVENT SELF-ROLE ESCALATION
+-- Protects public.profiles so non-admin users cannot promote themselves
+-- to 'dealer' or 'admin' or alter their buyer_status via direct client updates.
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.prevent_profile_privilege_escalation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (OLD.role IS DISTINCT FROM NEW.role) OR (OLD.buyer_status IS DISTINCT FROM NEW.buyer_status) THEN
+    IF NOT public.is_admin() THEN
+      RAISE EXCEPTION 'UNAUTHORIZED_PRIVILEGE_ESCALATION: You cannot modify your own platform role or verification status.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_prevent_profile_privilege_escalation ON public.profiles;
+CREATE TRIGGER trg_prevent_profile_privilege_escalation
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prevent_profile_privilege_escalation();

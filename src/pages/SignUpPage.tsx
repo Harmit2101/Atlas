@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, ShieldCheck, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 export const SignUpPage: React.FC = () => {
   const navigate = useNavigate();
-  const { signUp, user } = useAuth();
+  const location = useLocation();
+  const { signUp, user, authMode } = useAuth();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -14,11 +15,14 @@ export const SignUpPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const redirectParam = new URLSearchParams(location.search).get('redirect');
+  const destination = (location.state as any)?.from || redirectParam || '/explore';
+
   React.useEffect(() => {
     if (user) {
-      navigate('/account', { replace: true });
+      navigate(destination, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, destination]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +39,7 @@ export const SignUpPage: React.FC = () => {
       setError(signUpError);
       setLoading(false);
     } else {
-      navigate('/account', { replace: true });
+      navigate(destination, { replace: true });
     }
   };
 
@@ -57,6 +61,17 @@ export const SignUpPage: React.FC = () => {
             Create an authenticated identifier to curate private portfolios and access off-market opportunities.
           </p>
         </div>
+
+        {authMode === 'demo' && (
+          <div className="p-3 rounded bg-[#c5a880]/10 border border-[#c5a880]/30 text-[#e2c295] text-xs text-center space-y-1">
+            <span className="font-mono-luxury uppercase tracking-widest text-[10px] block font-semibold">
+              Demo Mode Active
+            </span>
+            <p className="text-[11px] text-[#8e8d93]">
+              Cloud authentication is temporarily offline. Establishing an account operates seamlessly in Local Demo Mode.
+            </p>
+          </div>
+        )}
 
         {error && (
           <div className="p-3 rounded bg-red-950/40 border border-red-500/30 text-red-300 text-xs text-center">

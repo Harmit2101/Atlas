@@ -167,6 +167,7 @@ export async function fetchGlobalDiscoveryFeed(
         try {
           const res = await searchListings({
             location: c.name,
+            minPrice: 300000,
             pageSize: 4
           }, signal);
 
@@ -174,17 +175,20 @@ export async function fetchGlobalDiscoveryFeed(
           rawListings.push(...items);
         } catch (err: any) {
           if (err.name === 'AbortError') throw err;
-          console.warn(`[ATLAS Discovery] Listing search failed for ${c.name}:`, err.message);
+          if (import.meta.env.DEV && typeof window !== 'undefined' && window.localStorage?.getItem('atlas_debug') === '1') {
+            console.debug(`[ATLAS Discovery] Handled: search for ${c.name} returned no items`);
+          }
         }
       }
 
-      // Deduplicate strictly by Untera listing ID
+      // Deduplicate strictly by Untera listing ID and enforce $300k USD floor
       const seenIds = new Set<string>();
       const uniqueProperties: AtlasProperty[] = [];
 
       for (const raw of rawListings) {
         const prop = normalizeUnteraListing(raw);
-        if (!seenIds.has(prop.id)) {
+        const isLuxuryQualified = prop.priceUsd >= 300000 || (prop.transactionType === 'rent' && prop.priceUsd >= 5000);
+        if (isLuxuryQualified && !seenIds.has(prop.id)) {
           seenIds.add(prop.id);
           uniqueProperties.push(prop);
         }

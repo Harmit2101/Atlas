@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, user } = useAuth();
+  const { signIn, user, authMode } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,13 +14,15 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If already logged in, redirect to account or return location
+  const redirectParam = new URLSearchParams(location.search).get('redirect');
+  const destination = (location.state as any)?.from || redirectParam || '/explore';
+
+  // If already logged in, redirect to intended location or explore
   React.useEffect(() => {
     if (user) {
-      const from = (location.state as any)?.from || '/account';
-      navigate(from, { replace: true });
+      navigate(destination, { replace: true });
     }
-  }, [user, navigate, location]);
+  }, [user, navigate, destination]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,8 +34,7 @@ export const LoginPage: React.FC = () => {
       setError(signInError);
       setLoading(false);
     } else {
-      const from = (location.state as any)?.from || '/account';
-      navigate(from, { replace: true });
+      navigate(destination, { replace: true });
     }
   };
 
@@ -55,6 +56,17 @@ export const LoginPage: React.FC = () => {
             Sign in to manage your saved acquisitions and confidential dossiers.
           </p>
         </div>
+
+        {authMode === 'demo' && (
+          <div className="p-3 rounded bg-[#c5a880]/10 border border-[#c5a880]/30 text-[#e2c295] text-xs text-center space-y-1">
+            <span className="font-mono-luxury uppercase tracking-widest text-[10px] block font-semibold">
+              Demo Mode Active
+            </span>
+            <p className="text-[11px] text-[#8e8d93]">
+              Cloud authentication is temporarily offline. You may sign in or establish credentials directly in Local Demo Mode.
+            </p>
+          </div>
+        )}
 
         {error && (
           <div className="p-3 rounded bg-red-950/40 border border-red-500/30 text-red-300 text-xs text-center">

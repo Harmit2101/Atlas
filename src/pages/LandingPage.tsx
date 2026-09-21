@@ -10,12 +10,18 @@ import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useProperties } from '@/hooks/useProperties';
 import { useDestinations } from '@/hooks/useDestinations';
 import { useStats } from '@/hooks/useStats';
+import { useCountryBeacons } from '@/hooks/useCountryBeacons';
+import { CountryBeacon } from '@/services/countryBeacons';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
+  const [selectedBeacon, setSelectedBeacon] = React.useState<CountryBeacon | null>(null);
 
   // Fetch live platform metrics directly from Untera API
   const { stats } = useStats();
+
+  // Load all 78+ sovereign territory beacons for 3D Earth cartography
+  const { beacons: countryBeacons } = useCountryBeacons();
 
   // Fetch live featured listings from Untera
   const { properties, loading, error, isLive, refetch } = useProperties({
@@ -114,15 +120,62 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 3D Interactive Globe (COMPLETELY SEAMLESS - NO RECTANGLE/BOX) */}
+            {/* 3D Interactive Globe with Sovereign Beacons (COMPLETELY SEAMLESS) */}
             <div className="lg:col-span-6 relative flex items-center justify-center">
               <div className="w-full relative h-[480px] sm:h-[580px] lg:h-[660px]">
                 <GlobeScene 
                   height="h-full" 
                   properties={properties}
-                  totalListingsCount={properties.length}
+                  countryBeacons={countryBeacons}
+                  selectedCountryCode={selectedBeacon?.country || null}
+                  onCountrySelect={(beacon) => setSelectedBeacon(beacon)}
+                  totalListingsCount={stats?.listings || 4012480}
                   showHUD={true}
                 />
+
+                {/* Floating Sovereign Teleport Card */}
+                {selectedBeacon && (
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-sm p-4 rounded bg-[#08080a]/95 backdrop-blur-md border border-[#c5a880]/60 shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-bottom-3">
+                    <div className="flex items-start justify-between gap-4 mb-2">
+                      <div>
+                        <span className="text-[9px] font-mono-luxury uppercase tracking-widest text-[#c5a880] block">
+                          SOVEREIGN MARKET LOCKED
+                        </span>
+                        <h3 className="font-editorial text-lg text-[#f4f2ec]">
+                          {selectedBeacon.countryName} ({selectedBeacon.country})
+                        </h3>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedBeacon(null)}
+                        className="text-[#8e8d93] hover:text-[#f4f2ec] text-[10px] font-mono-luxury px-2 py-0.5 rounded bg-white/5 border border-white/10"
+                        title="Return to global orbit"
+                      >
+                        ✕ Orbit
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] font-mono-luxury text-[#8e8d93] py-2 border-y border-white/10 mb-3">
+                      <span>{selectedBeacon.listingCount.toLocaleString()} Live MLS Assets</span>
+                      <span className="text-[#c5a880] font-semibold">Grade {selectedBeacon.grade} ({selectedBeacon.score}/100)</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => navigate(`/explore?country=${encodeURIComponent(selectedBeacon.country)}&minPrice=300000`)}
+                        className="flex-1 py-2 px-3 rounded bg-[#c5a880] hover:bg-[#d4b992] text-[#08080a] font-mono-luxury text-xs font-semibold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow-md"
+                      >
+                        <span>Explore Luxury ($300k+)</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => navigate(`/markets`)}
+                        className="py-2 px-3 rounded bg-white/5 hover:bg-white/10 text-[#f4f2ec] border border-white/10 font-mono-luxury text-xs uppercase tracking-wider transition-colors"
+                      >
+                        Dossier
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

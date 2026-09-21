@@ -1,20 +1,57 @@
-import React, { Suspense, useState, useMemo, useCallback } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useNavigate } from 'react-router-dom';
 import { AtlasProperty } from '@/types/property';
+import { CountryBeacon } from '@/services/countryBeacons';
 import { Globe } from './Globe';
 import { CelestialStars } from './CelestialStars';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { isValidCoordinate } from '@/services/destinationService';
-import { Compass, Globe2 } from 'lucide-react';
+import { Compass, Globe2, RotateCcw } from 'lucide-react';
+import { 
+  registerCanvasMount, 
+  registerCanvasUnmount, 
+  recordContextLoss, 
+  recordContextRestored 
+} from '@/services/webglDiagnostics';
+
+// Smooth Three.js camera dolly zoom between planetary orbit and satellite lock-on
+function CameraDollyController({
+  isZoomed,
+  controlsRef
+}: {
+  isZoomed: boolean;
+  controlsRef: React.RefObject<any>;
+}) {
+  const { camera } = useThree();
+
+  useFrame((_, delta) => {
+    // When zoomed in, target orbit distance is ~3.4. When in global view, ~5.8.
+    const targetDistance = isZoomed ? 3.4 : 5.8;
+    const currentDistance = camera.position.length();
+
+    if (Math.abs(currentDistance - targetDistance) > 0.01) {
+      const newDistance = THREE.MathUtils.damp(currentDistance, targetDistance, 2.8, delta);
+      camera.position.setLength(newDistance);
+      controlsRef.current?.update();
+    }
+  });
+
+  return null;
+}
 
 interface GlobeSceneProps {
   className?: string;
   height?: string;
   properties?: AtlasProperty[];
+  countryBeacons?: CountryBeacon[];
   selectedPropertyId?: string | null;
+  selectedCountryCode?: string | null;
   onPropertySelect?: (property: AtlasProperty) => void;
+  onCountrySelect?: (beacon: CountryBeacon) => void;
+  isZoomed?: boolean;
   showHUD?: boolean;
   totalListingsCount?: number;
   // Retained for backward-compatibility with other callers:
@@ -27,14 +64,62 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
   className = '',
   height = 'h-[500px] md:h-[640px]',
   properties = [],
+  countryBeacons = [],
   selectedPropertyId = null,
+  selectedCountryCode = null,
   onPropertySelect,
+  onCountrySelect,
+  isZoomed = false,
   showHUD = true,
   totalListingsCount
 }) => {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [isContextLost, setIsContextLost] = useState(false);
+  const canvasIdRef = useRef(`globe-${Math.random().toString(36).slice(2, 8)}`);
+  const canvasElRef = useRef<HTMLCanvasElement | null>(null);
+  const glRef = useRef<any>(null);
+  const controlsRef = useRef<any>(null);
+
+  const handleContextLost = useCallback((e: Event) => {
+    e.preventDefault();
+    recordContextLoss(canvasIdRef.current, 'globe');
+    setIsContextLost(true);
+  }, []);
+
+  const handleContextRestored = useCallback(() => {
+    recordContextRestored(canvasIdRef.current, 'globe');
+    setIsContextLost(false);
+  }, []);
+
+  // WebGL Canvas lifecycle registration & event listener cleanup
+  useEffect(() => {
+    const canvasId = canvasIdRef.current;
+    registerCanvasMount(canvasId, 'globe');
+
+    return () => {
+      registerCanvasUnmount(canvasId);
+
+      const el = canvasElRef.current;
+      if (el) {
+        el.removeEventListener('webglcontextlost', handleContextLost);
+        el.removeEventListener('webglcontextrestored', handleContextRestored);
+      }
+
+      // Explicitly release hardware WebGL context on unmount to free browser GPU context slot
+      const gl = glRef.current;
+      if (gl) {
+        try {
+          const loseContext = gl.getExtension('WEBGL_lose_context');
+          if (loseContext) {
+            loseContext.loseContext();
+          }
+          gl.dispose();
+        } catch {}
+      }
+    };
+  }, [handleContextLost, handleContextRestored]);
 
   // Click on property marker navigates directly to the live property detail page
   const handlePropertySelect = useCallback((property: AtlasProperty) => {
@@ -61,7 +146,7 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
 
   return (
     <div className={`relative w-full ${height} select-none bg-transparent overflow-visible ${className}`}>
-      {/* Accessible 2D Fallback for Reduced Motion */}
+      {/* Accessible 2D Fallback for Reduced Motion or Context Recovery */}
       {prefersReducedMotion ? (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center">
           <Globe2 className="w-10 h-10 text-[#c5a880] mb-3" />
@@ -92,20 +177,59 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
           )}
         </div>
       ) : (
-        /* Transparent Seamless WebGL Canvas */
-        <Canvas
-          camera={{ position: [0, 0, 5.8], fov: 36 }}
-          dpr={[1, 1.5]}
-          gl={{
-            antialias: true,
-            alpha: true,
-            powerPreference: 'high-performance'
-          }}
-          onCreated={({ gl }) => {
-            gl.setClearColor(0x000000, 0);
-          }}
-          className="w-full h-full cursor-grab active:cursor-grabbing bg-transparent"
-        >
+        <>
+          {/* Context Loss Non-Destructive Overlay (Phase 13) */}
+          {isContextLost && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center bg-[#08080a]/90 rounded border border-white/10">
+              <Globe2 className="w-10 h-10 text-[#c5a880] mb-3" />
+              <h3 className="text-sm font-mono-luxury uppercase tracking-widest text-[#f4f2ec] mb-1">
+                Globe View Temporarily Suspended
+              </h3>
+              <p className="text-xs text-[#8e8d93] max-w-md mb-4 font-light">
+                GPU rendering resources were freed during route navigation. The globe will restore automatically when context is recovered.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsContextLost(false);
+                }}
+                className="px-5 py-2 rounded bg-[#111116] hover:bg-[#15151c] text-[#f4f2ec] border border-[#c5a880]/50 hover:border-[#c5a880] font-mono-luxury text-xs uppercase tracking-widest transition-all flex items-center gap-2"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-[#c5a880]" />
+                <span>Recheck Planetary Globe</span>
+              </button>
+            </div>
+          )}
+
+          {/* Transparent Seamless WebGL Canvas */}
+          <Canvas
+            camera={{ position: [0, 0, 5.8], fov: 36 }}
+            dpr={[1, 1.5]}
+            gl={{
+              antialias: true,
+              alpha: true,
+              powerPreference: 'high-performance'
+            }}
+            raycaster={{
+              params: {
+                Line: { threshold: 0.01 },
+                Points: { threshold: 0.01 },
+                Mesh: {},
+                LOD: {},
+                Sprite: {}
+              }
+            }}
+            onCreated={({ gl }) => {
+              glRef.current = gl;
+              gl.setClearColor(0x000000, 0);
+              const canvasEl = gl.domElement;
+              canvasElRef.current = canvasEl;
+
+              canvasEl.addEventListener('webglcontextlost', handleContextLost, false);
+              canvasEl.addEventListener('webglcontextrestored', handleContextRestored, false);
+            }}
+            className="w-full h-full cursor-grab active:cursor-grabbing bg-transparent"
+          >
           {/* Subtle cinematic lighting */}
           <ambientLight intensity={0.45} />
           <directionalLight position={[10, 8, 6]} intensity={1.6} color="#ffffff" />
@@ -114,19 +238,29 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
           {/* Restrained celestial starfield */}
           <CelestialStars radius={45} depth={25} count={500} speed={0.2} />
 
+          {/* Smooth camera dolly controller */}
+          <CameraDollyController
+            isZoomed={isZoomed || Boolean(selectedCountryCode)}
+            controlsRef={controlsRef}
+          />
+
           <Suspense fallback={null}>
             <Globe
               properties={properties}
+              countryBeacons={countryBeacons}
               globeRadius={1.55}
               hoveredId={hoveredId}
               selectedPropertyId={selectedPropertyId}
+              selectedCountryCode={selectedCountryCode}
               onHoverId={setHoveredId}
               onSelectProperty={handlePropertySelect}
-              autoRotate={!selectedPropertyId}
+              onSelectCountry={onCountrySelect}
+              autoRotate={!selectedPropertyId && !selectedCountryCode}
             />
           </Suspense>
 
           <OrbitControls
+            ref={controlsRef}
             enableZoom={true}
             minDistance={2.4}
             maxDistance={7.0}
@@ -136,9 +270,10 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
             maxPolarAngle={(2.3 * Math.PI) / 3.4}
           />
         </Canvas>
+        </>
       )}
 
-      {/* Minimalist Telemetry HUD (Zero Cluster Jargon) */}
+      {/* Minimalist Telemetry HUD */}
       {showHUD && (
         <div className="absolute top-4 left-4 z-20 pointer-events-none hidden sm:flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-[9px] font-mono-luxury tracking-widest uppercase text-[#c5a880]">
@@ -146,20 +281,31 @@ export const GlobeScene: React.FC<GlobeSceneProps> = ({
             <span>GLOBAL ASSET CARTOGRAPHY · REAL EARTH</span>
           </div>
 
-          {totalGeolocated > 0 ? (
-            <div className="text-[10px] font-mono-luxury text-[#8e8d93]/90 border-l border-white/10 pl-2 space-y-0.5">
-              <div className="text-[#f4f2ec]">
-                {displayTotal} LIVE {displayTotal === 1 ? 'LISTING' : 'LISTINGS'} · {totalGeolocated} GEOLOCATED
+          <div className="text-[10px] font-mono-luxury text-[#8e8d93]/90 border-l border-white/10 pl-2 space-y-0.5">
+            {countryBeacons.length > 0 ? (
+              <>
+                <div className="text-[#f4f2ec]">
+                  {countryBeacons.length} SOVEREIGN JURISDICTIONS ACTIVE
+                </div>
+                <div className="text-[9px] text-[#c5a880]">
+                  4,012,480+ LIVE MLS ASSETS TRACKED · CLICK BEACON TO TELEPORT
+                </div>
+              </>
+            ) : totalGeolocated > 0 ? (
+              <>
+                <div className="text-[#f4f2ec]">
+                  {displayTotal} LIVE {displayTotal === 1 ? 'LISTING' : 'LISTINGS'} · {totalGeolocated} GEOLOCATED
+                </div>
+                <div className="text-[9px] text-[#c5a880]">
+                  {uniqueLocationsCount} DISTINCT {uniqueLocationsCount === 1 ? 'LOCATION' : 'LOCATIONS'}
+                </div>
+              </>
+            ) : (
+              <div className="text-[10px] font-mono-luxury text-[#8e8d93]/80">
+                0 GEOLOCATED PROPERTIES AVAILABLE
               </div>
-              <div className="text-[9px] text-[#c5a880]">
-                {uniqueLocationsCount} DISTINCT {uniqueLocationsCount === 1 ? 'LOCATION' : 'LOCATIONS'}
-              </div>
-            </div>
-          ) : (
-            <div className="text-[10px] font-mono-luxury text-[#8e8d93]/80 border-l border-white/10 pl-2">
-              0 GEOLOCATED PROPERTIES AVAILABLE
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 

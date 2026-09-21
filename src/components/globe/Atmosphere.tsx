@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 
 interface AtmosphereProps {
@@ -32,6 +32,12 @@ export const Atmosphere: React.FC<AtmosphereProps> = ({ radius = 1.55 }) => {
       depthWrite: false
     });
   }, []);
+
+  useEffect(() => {
+    return () => {
+      atmosphereMaterial.dispose();
+    };
+  }, [atmosphereMaterial]);
 
   return (
     <mesh material={atmosphereMaterial}>

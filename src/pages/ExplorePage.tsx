@@ -8,21 +8,30 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useProperties } from '@/hooks/useProperties';
+import { useCountryBeacons } from '@/hooks/useCountryBeacons';
 import { isValidCoordinate } from '@/services/destinationService';
 import { PropertyFilterState, AtlasProperty } from '@/types/property';
 import { ArrowDown, Loader2, Compass } from 'lucide-react';
 
 export const ExplorePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { beacons: countryBeacons } = useCountryBeacons();
 
-  // Initialize filter from URL params
+  // Initialize filter from URL params with luxury floor default ($300k+ sale, $5k+ rent)
   const [filter, setFilter] = useState<PropertyFilterState>(() => {
+    const rawTx = searchParams.get('transaction') || '';
+    const rawTier = (searchParams.get('tier') as any) || '';
+    const isRent = rawTx === 'rent' || rawTier === 'ultra-luxury-rent';
+    const defaultLuxuryFloor = isRent ? 5000 : 300000;
+    const initialMin = searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : defaultLuxuryFloor;
+
     return {
       country: searchParams.get('country') || '',
-      location: searchParams.get('location') || searchParams.get('destination') || searchParams.get('q') || '',
+      location: searchParams.get('location') || searchParams.get('destination') || '',
       propertyType: searchParams.get('type') || '',
-      transactionType: searchParams.get('transaction') || '',
-      minPrice: searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined,
+      transactionType: rawTx,
+      tier: rawTier,
+      minPrice: initialMin,
       maxPrice: searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined,
       bedrooms: searchParams.get('bedrooms') || '',
       searchQuery: searchParams.get('q') || '',
@@ -62,22 +71,45 @@ export const ExplorePage: React.FC = () => {
   // Sync URL params when searchParams change (browser back/forward navigation)
   useEffect(() => {
     const country = searchParams.get('country') || '';
-    const loc = searchParams.get('location') || searchParams.get('destination') || searchParams.get('q') || '';
+    const loc = searchParams.get('location') || searchParams.get('destination') || '';
+    const q = searchParams.get('q') || '';
     const type = searchParams.get('type') || '';
     const transaction = searchParams.get('transaction') || '';
+    const tier = (searchParams.get('tier') as any) || '';
     const sort = searchParams.get('sort') || 'featured';
     const beds = searchParams.get('bedrooms') || '';
+    const minPrice = searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined;
+    const maxPrice = searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined;
 
-    setFilter(prev => ({
-      ...prev,
-      country,
-      location: loc,
-      propertyType: type,
-      transactionType: transaction,
-      sortBy: sort,
-      bedrooms: beds,
-      searchQuery: searchParams.get('q') || loc
-    }));
+    setFilter(prev => {
+      if (
+        prev.country === country &&
+        prev.location === loc &&
+        prev.searchQuery === q &&
+        prev.propertyType === type &&
+        prev.transactionType === transaction &&
+        prev.tier === tier &&
+        prev.sortBy === sort &&
+        prev.bedrooms === beds &&
+        prev.minPrice === minPrice &&
+        prev.maxPrice === maxPrice
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        country,
+        location: loc,
+        searchQuery: q,
+        propertyType: type,
+        transactionType: transaction,
+        tier,
+        sortBy: sort,
+        bedrooms: beds,
+        minPrice,
+        maxPrice
+      };
+    });
   }, [searchParams]);
 
   // Handle filter changes and update URL params cleanly
@@ -86,13 +118,14 @@ export const ExplorePage: React.FC = () => {
     const params: Record<string, string> = {};
     if (newFilter.country) params.country = newFilter.country;
     if (newFilter.location) params.location = newFilter.location;
+    if (newFilter.searchQuery) params.q = newFilter.searchQuery;
     if (newFilter.propertyType) params.type = newFilter.propertyType;
     if (newFilter.transactionType) params.transaction = newFilter.transactionType;
+    if (newFilter.tier) params.tier = newFilter.tier;
     if (newFilter.bedrooms) params.bedrooms = newFilter.bedrooms;
     if (newFilter.minPrice) params.minPrice = String(newFilter.minPrice);
     if (newFilter.maxPrice) params.maxPrice = String(newFilter.maxPrice);
     if (newFilter.sortBy && newFilter.sortBy !== 'featured') params.sort = newFilter.sortBy;
-    if (newFilter.searchQuery && !newFilter.location) params.q = newFilter.searchQuery;
 
     setSearchParams(params);
   };
@@ -104,7 +137,8 @@ export const ExplorePage: React.FC = () => {
       destinationId: '',
       propertyType: '',
       transactionType: '',
-      minPrice: undefined,
+      tier: '',
+      minPrice: 300000,
       maxPrice: undefined,
       bedrooms: '',
       searchQuery: '',
@@ -113,14 +147,24 @@ export const ExplorePage: React.FC = () => {
       pageSize: 24
     };
     setFilter(cleared);
-    setSearchParams({});
+    setSearchParams({ minPrice: '300000' });
   };
 
-  const activeHubName = filter.country 
+  const activeHubName = filter.tier === 'high-value-sale'
+    ? 'High-Value Commercial Portfolio ($300k+)'
+    : filter.tier === 'ultra-luxury-rent'
+    ? 'Ultra-Luxury Daily Rentals ($5k+/Day)'
+    : filter.country 
     ? `Country: ${filter.country}` 
     : filter.location 
-      ? `Territory: ${filter.location}` 
-      : 'Global Exploration';
+    ? `Territory: ${filter.location}` 
+    : filter.searchQuery
+    ? `Keyword: "${filter.searchQuery}"`
+    : filter.transactionType === 'rent'
+    ? 'Luxury Leasing Portfolio'
+    : filter.transactionType === 'sale'
+    ? 'Acquisitions & Estates'
+    : 'Global Exploration';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -196,6 +240,16 @@ export const ExplorePage: React.FC = () => {
             <GlobeScene
               height={activeTab === 'globe' ? 'h-[600px] sm:h-[700px]' : 'h-[360px] sm:h-[440px]'}
               properties={properties}
+              countryBeacons={countryBeacons}
+              selectedCountryCode={filter.country || null}
+              onCountrySelect={(beacon) => {
+                handleFilterChange({
+                  ...filter,
+                  country: beacon.country,
+                  location: '',
+                  page: 1
+                });
+              }}
               totalListingsCount={properties.length}
               showHUD={false}
             />

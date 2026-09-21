@@ -1,12 +1,50 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { 
+  isImageUrlBroken, 
+  markImageUrlBroken, 
+  isSuspectDomain, 
+  validateCandidateUrlServerSide 
+} from '@/services/mediaService';
 
-// Shared texture cache to prevent duplicate network requests and preserve GPU memory
+// Bounded texture cache strictly limited to 6 active textures to prevent GPU memory pressure
+const MAX_TEXTURE_CACHE_SIZE = 6;
 const textureCache = new Map<string, THREE.Texture>();
 const texturePromises = new Map<string, Promise<THREE.Texture | null>>();
 
+function setCachedTexture(url: string, tex: THREE.Texture): void {
+  if (textureCache.size >= MAX_TEXTURE_CACHE_SIZE) {
+    const oldestKey = textureCache.keys().next().value;
+    if (oldestKey) {
+      const oldTex = textureCache.get(oldestKey);
+      try {
+        oldTex?.dispose();
+      } catch {}
+      textureCache.delete(oldestKey);
+    }
+  }
+  textureCache.set(url, tex);
+}
+
+/**
+ * Disposes all cached textures and resets promises when rotunda is unmounted
+ * or when the user navigates to another property or route.
+ */
+export function disposePhotoTextureCache(): void {
+  for (const [, tex] of textureCache.entries()) {
+    try {
+      tex.dispose();
+    } catch {}
+  }
+  textureCache.clear();
+  texturePromises.clear();
+}
+
 export function loadPhotoTexture(url: string): Promise<THREE.Texture | null> {
+  if (!url || isImageUrlBroken(url)) {
+    return Promise.resolve(null);
+  }
   if (textureCache.has(url)) {
     return Promise.resolve(textureCache.get(url)!);
   }
@@ -14,30 +52,43 @@ export function loadPhotoTexture(url: string): Promise<THREE.Texture | null> {
     return texturePromises.get(url)!;
   }
 
-  const promise = new Promise<THREE.Texture | null>((resolve) => {
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin('anonymous');
-
-    loader.load(
-      url,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.generateMipmaps = true;
-        tex.needsUpdate = true;
-        textureCache.set(url, tex);
+  const promise = (async () => {
+    // If domain is suspect, validate server-side before invoking browser TextureLoader
+    if (isSuspectDomain(url)) {
+      const validation = await validateCandidateUrlServerSide(url);
+      if (!validation.valid) {
+        markImageUrlBroken(url, validation.failureType || 'IMAGE_UNKNOWN');
         texturePromises.delete(url);
-        resolve(tex);
-      },
-      undefined,
-      (err) => {
-        // Fall back gracefully if an individual photographic asset fails
-        texturePromises.delete(url);
-        resolve(null);
+        return null;
       }
-    );
-  });
+    }
+
+    return new Promise<THREE.Texture | null>((resolve) => {
+      const loader = new THREE.TextureLoader();
+      loader.setCrossOrigin('anonymous');
+
+      loader.load(
+        url,
+        (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.generateMipmaps = true;
+          tex.needsUpdate = true;
+          setCachedTexture(url, tex);
+          texturePromises.delete(url);
+          resolve(tex);
+        },
+        undefined,
+        () => {
+          // Fall back gracefully if an individual photographic asset fails or resets connection
+          markImageUrlBroken(url, url.includes('homes.jp') ? 'IMAGE_CONNECTION_RESET' : 'IMAGE_UNKNOWN');
+          texturePromises.delete(url);
+          resolve(null);
+        }
+      );
+    });
+  })();
 
   texturePromises.set(url, promise);
   return promise;
@@ -69,20 +120,29 @@ const PhotoPanel: React.FC<PhotoPanelProps> = ({
   const isSelected = selectedIndex === index;
   const diff = index - selectedIndex;
 
-  // Load and cache texture
+  // Staged loading rule (Phase 7): Only request texture for current frame and immediate adjacent frames (diff <= 1)
+  const isAdjacentOrSelected = Math.abs(diff) <= 1;
+
   useEffect(() => {
     let active = true;
-    if (!texture) {
-      loadPhotoTexture(url).then((tex) => {
-        if (active && tex) {
-          setTexture(tex);
-        }
-      });
+    if (isAdjacentOrSelected) {
+      if (!texture) {
+        loadPhotoTexture(url).then((tex) => {
+          if (active && tex) {
+            setTexture(tex);
+          }
+        });
+      }
+    } else {
+      // If panel moves far away, detach local texture reference to encourage VRAM reclamation
+      if (texture && !isSelected) {
+        setTexture(null);
+      }
     }
     return () => {
       active = false;
     };
-  }, [url, texture]);
+  }, [url, isAdjacentOrSelected, isSelected, texture]);
 
   // Position along graceful arc centered directly in front of camera
   const targetTransform = useMemo(() => {
@@ -98,7 +158,7 @@ const PhotoPanel: React.FC<PhotoPanelProps> = ({
       pos: [x, y, z] as [number, number, number],
       rotY,
       scale,
-      visible: Math.abs(diff) <= 7
+      visible: Math.abs(diff) <= 6
     };
   }, [diff, radius, isSelected, total]);
 
@@ -198,20 +258,27 @@ export const PhotoImmersionRotunda: React.FC<PhotoImmersionRotundaProps> = ({
   const groupRef = useRef<THREE.Group>(null);
   const [, setAnyHovered] = useState(false);
 
-  // Pre-fetch active image and immediate neighbors
+  // Clean disposal on unmount to completely free GPU VRAM
+  useEffect(() => {
+    return () => {
+      disposePhotoTextureCache();
+    };
+  }, []);
+
+  // Pre-fetch ONLY active image and immediately adjacent frames (Phase 7)
   useEffect(() => {
     if (!images || images.length === 0) return;
     const windowIndices = [
       selectedIndex,
       (selectedIndex + 1) % images.length,
-      (selectedIndex - 1 + images.length) % images.length,
-      (selectedIndex + 2) % images.length,
-      (selectedIndex - 2 + images.length) % images.length
+      (selectedIndex - 1 + images.length) % images.length
     ];
 
     windowIndices.forEach((idx) => {
       const url = images[idx];
-      if (url) loadPhotoTexture(url);
+      if (url && !isImageUrlBroken(url)) {
+        loadPhotoTexture(url);
+      }
     });
   }, [selectedIndex, images]);
 

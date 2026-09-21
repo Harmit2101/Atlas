@@ -5,12 +5,16 @@ import { AtlasProperty } from '@/types/property';
 import { fetchProperties } from '@/services/propertyService';
 import { DESTINATIONS } from '@/data/destinations';
 
+import { useAuth } from '@/hooks/useAuth';
+import { Lock, ShieldCheck } from 'lucide-react';
+
 interface QuickSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onClose }) => {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AtlasProperty[]>([]);
   const [loading, setLoading] = useState(false);
@@ -19,7 +23,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && user) {
       setTimeout(() => inputRef.current?.focus(), 50);
       setSelectedIndex(-1);
     } else {
@@ -27,7 +31,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
       setResults([]);
       setSelectedIndex(-1);
     }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   // Handle keyboard navigation (ArrowUp, ArrowDown, Enter, Escape)
   useEffect(() => {
@@ -36,6 +40,8 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
+      } else if (!user) {
+        return;
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedIndex(prev => (prev < results.length - 1 ? prev + 1 : 0));
@@ -58,11 +64,11 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, selectedIndex, results, query, onClose, navigate]);
+  }, [isOpen, selectedIndex, results, query, onClose, navigate, user]);
 
   // Debounced live search
   useEffect(() => {
-    if (!query.trim()) {
+    if (!user || !query.trim()) {
       setResults([]);
       setLoading(false);
       return;
@@ -88,7 +94,8 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
       clearTimeout(handler);
       controller.abort();
     };
-  }, [query]);
+  }, [query, user]);
+
 
   // Destination filter
   const matchingDestinations = query.trim()
@@ -106,28 +113,76 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
         className="w-full max-w-2xl bg-[#111116] border border-[#c5a880]/30 rounded-lg shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Search Input Bar */}
-        <div className="flex items-center px-4 py-3.5 border-b border-white/10 gap-3">
-          {loading ? (
-            <Loader2 className="w-5 h-5 text-[#c5a880] animate-spin" />
-          ) : (
-            <Search className="w-5 h-5 text-[#c5a880]" />
-          )}
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Search live assets across 80+ countries by city, title, or style..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 bg-transparent text-sm text-[#f4f2ec] placeholder-[#8e8d93] outline-none"
-          />
-          <button
-            onClick={onClose}
-            className="p-1 rounded text-[#8e8d93] hover:text-[#f4f2ec] hover:bg-white/5 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        {!user ? (
+          <div className="p-8 text-center space-y-6">
+            <div className="flex justify-end">
+              <button
+                onClick={onClose}
+                className="p-1 rounded text-[#8e8d93] hover:text-[#f4f2ec] hover:bg-white/5 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-[#c5a880]/10 border border-[#c5a880]/40 flex items-center justify-center mx-auto text-[#c5a880]">
+              <Lock className="w-6 h-6" />
+            </div>
+            <div className="space-y-2 max-w-md mx-auto">
+              <span className="text-[10px] font-mono-luxury uppercase tracking-[0.25em] text-[#c5a880] block">
+                AUTHENTICATION REQUIRED
+              </span>
+              <h3 className="font-editorial text-2xl text-[#f4f2ec]">
+                Atlas Global Registry Search
+              </h3>
+              <p className="text-xs text-[#8e8d93] leading-relaxed">
+                Real-time multi-continental MLS search, geocoded spatial maps, and proprietary property valuations are reserved for authenticated members.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => {
+                  onClose();
+                  navigate('/login?redirect=/explore');
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-sm bg-[#c5a880] hover:bg-[#e2c295] text-[#08080a] font-mono-luxury text-xs uppercase tracking-wider font-semibold transition-colors"
+              >
+                Sign In to Search
+              </button>
+              <button
+                onClick={() => {
+                  onClose();
+                  navigate('/signup?redirect=/explore');
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-sm bg-white/5 hover:bg-white/10 border border-white/10 text-[#f4f2ec] font-mono-luxury text-xs uppercase tracking-wider transition-colors"
+              >
+                Establish Registry Access
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Search Input Bar */}
+            <div className="flex items-center px-4 py-3.5 border-b border-white/10 gap-3">
+              {loading ? (
+                <Loader2 className="w-5 h-5 text-[#c5a880] animate-spin" />
+              ) : (
+                <Search className="w-5 h-5 text-[#c5a880]" />
+              )}
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Search live assets across 80+ countries by city, title, or style..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="flex-1 bg-transparent text-sm text-[#f4f2ec] placeholder-[#8e8d93] outline-none"
+              />
+              <button
+                onClick={onClose}
+                className="p-1 rounded text-[#8e8d93] hover:text-[#f4f2ec] hover:bg-white/5 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
 
         {/* Results Container */}
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-5">
@@ -231,7 +286,10 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onCl
             Explore all in catalogue →
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
 };
+

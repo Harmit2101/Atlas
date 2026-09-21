@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { getCloudAvailability } from '@/services/authService';
 import { 
   Inquiry, 
   InquiryStatus, 
@@ -9,6 +10,36 @@ import {
   PropertyEngagementEvent,
   EngagementEventName
 } from '@/types/commercial';
+
+const isCloudActive = () => isSupabaseConfigured && getCloudAvailability();
+
+const LOCAL_STORAGE_UNAVAILABLE_TABLES = 'atlas_unavailable_tables';
+
+function getUnavailableTables(): Set<string> {
+  const set = new Set<string>(['property_engagement_events']);
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_UNAVAILABLE_TABLES);
+    if (raw) {
+      JSON.parse(raw).forEach((t: string) => set.add(t));
+    }
+  } catch {}
+  return set;
+}
+
+const unavailableTables = getUnavailableTables();
+
+function isTableUnavailable(tableName: string): boolean {
+  return unavailableTables.has(tableName);
+}
+
+function handleTableError(tableName: string, error: any): void {
+  if (error && (error.code === 'PGRST205' || error.message?.includes('schema cache') || error.code === '42P01' || error.status === 404)) {
+    unavailableTables.add(tableName);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_UNAVAILABLE_TABLES, JSON.stringify(Array.from(unavailableTables)));
+    } catch {}
+  }
+}
 
 const LOCAL_STORAGE_INQUIRIES_KEY = 'atlas_local_inquiries';
 const LOCAL_STORAGE_EVENTS_KEY = 'atlas_local_inquiry_events';
@@ -144,7 +175,7 @@ export async function submitInquiry(input: CreateInquiryInput): Promise<{ data: 
 }
 
 export async function fetchInquiries(filter?: { status?: InquiryStatus; assignedDealerId?: string }): Promise<Inquiry[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let query = supabase.from('inquiries').select('*').order('created_at', { ascending: false });
       if (filter?.status) {
@@ -178,7 +209,7 @@ export async function updateInquiryStatus(
   actorId?: string,
   notes?: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase
         .from('inquiries')
@@ -216,7 +247,7 @@ export async function recordInquiryEvent(
   payload: Record<string, any> = {},
   actorId?: string
 ): Promise<void> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       await supabase.from('inquiry_events').insert([{
         inquiry_id: inquiryId,
@@ -252,7 +283,7 @@ export async function submitListingClaim(input: {
     created_at: new Date().toISOString()
   };
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase.from('listing_claims').insert([claim]);
       if (!error) return { success: true };
@@ -273,7 +304,7 @@ export async function submitListingClaim(input: {
 }
 
 export async function fetchListingClaims(): Promise<ListingClaim[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { data, error } = await supabase.from('listing_claims').select('*').order('created_at', { ascending: false });
       if (!error && data) return data as ListingClaim[];
@@ -295,7 +326,7 @@ export async function updateListingClaimStatus(
   status: ClaimStatus, 
   notes?: string
 ): Promise<{ success: boolean }> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase
         .from('listing_claims')
@@ -328,16 +359,21 @@ export async function recordEngagement(
   metadata: Record<string, any> = {},
   userId?: string
 ): Promise<void> {
-  if (isSupabaseConfigured) {
+  if (isTableUnavailable('property_engagement_events')) return;
+
+  if (isCloudActive()) {
     try {
-      await supabase.from('property_engagement_events').insert([{
+      const { error } = await supabase.from('property_engagement_events').insert([{
         property_id: propertyId,
         user_id: userId || null,
         event_name: eventName,
         metadata
       }]);
-    } catch {
-      // Engagement tracking is best-effort
+      if (error) {
+        handleTableError('property_engagement_events', error);
+      }
+    } catch (e) {
+      handleTableError('property_engagement_events', e);
     }
   }
 }

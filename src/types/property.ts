@@ -38,6 +38,9 @@ export interface Property {
   isSample: true;
 }
 
+export type ListingIntent = 'sale' | 'rent' | 'unknown';
+export type RentalPeriod = 'day' | 'week' | 'month' | 'year' | 'unknown';
+
 // Normalized Atlas domain model
 export interface AtlasProperty {
   id: string;
@@ -62,6 +65,12 @@ export interface AtlasProperty {
   longitude: number;
   propertyType: string;
   transactionType: TransactionType;
+  listingIntent: ListingIntent;
+  rentalPeriod?: RentalPeriod;
+  isHighValueSale: boolean;
+  isUltraLuxuryRental: boolean;
+  floorPlans: string[];
+  spatialSource?: 'room_geometry' | 'floor_plan' | 'metadata_massing' | 'none';
   bedrooms: number;
   bathrooms: number;
   areaSqm: number;
@@ -70,6 +79,9 @@ export interface AtlasProperty {
   architecturalStyle?: string;
   images: string[];
   imageUrl?: string;
+  primaryImage?: string | null;
+  videos?: string[];
+  virtualTours?: string[];
   features: string[];
   curatorNotes?: string;
   listedAt?: string;
@@ -105,6 +117,11 @@ export interface UnteraRawListing {
   type?: string;
   transaction?: string;
   transaction_type?: string;
+  rental_period?: string | null;
+  rent_period?: string | null;
+  price_period?: string | null;
+  period?: string | null;
+  frequency?: string | null;
   bedrooms?: number | null;
   beds?: number;
   bathrooms?: number | null;
@@ -116,6 +133,10 @@ export interface UnteraRawListing {
   year_built?: number;
   images?: string[] | null;
   photos?: string[];
+  floor_plans?: string[] | any;
+  floorplans?: string[] | any;
+  floor_plan?: string | any;
+  floorplan?: string | any;
   features?: string[];
   amenities?: string[];
   created_at?: string;
@@ -149,7 +170,8 @@ export interface PropertyFilterState {
   location?: string;
   destinationId?: string;
   propertyType?: string;
-  transactionType?: string;
+  transactionType?: string; // 'sale' | 'rent' | 'all' | ''
+  tier?: 'all' | 'high-value-sale' | 'ultra-luxury-rent' | '';
   minPrice?: number;
   maxPrice?: number;
   bedrooms?: string;
@@ -161,4 +183,5 @@ export interface PropertyFilterState {
   page?: number;
   pageSize?: number;
 }
+
 

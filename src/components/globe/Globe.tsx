@@ -2,17 +2,22 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { AtlasProperty } from '@/types/property';
+import { CountryBeacon } from '@/services/countryBeacons';
 import { PropertyMarker } from './PropertyMarker';
+import { CountryBeaconMarker } from './CountryBeaconMarker';
 import { Atmosphere } from './Atmosphere';
 import { isValidCoordinate } from '@/services/destinationService';
 
 interface GlobeProps {
   properties?: AtlasProperty[];
+  countryBeacons?: CountryBeacon[];
   globeRadius?: number;
   hoveredId: string | null;
   selectedPropertyId?: string | null;
+  selectedCountryCode?: string | null;
   onHoverId: (id: string | null) => void;
-  onSelectProperty: (property: AtlasProperty) => void;
+  onSelectProperty?: (property: AtlasProperty) => void;
+  onSelectCountry?: (beacon: CountryBeacon) => void;
   autoRotate?: boolean;
 }
 
@@ -96,11 +101,14 @@ const earthFragmentShader = `
 
 export const Globe: React.FC<GlobeProps> = ({
   properties = [],
+  countryBeacons = [],
   globeRadius = 1.55,
   hoveredId,
   selectedPropertyId,
+  selectedCountryCode,
   onHoverId,
   onSelectProperty,
+  onSelectCountry,
   autoRotate = true
 }) => {
   const globeGroupRef = useRef<THREE.Group>(null);
@@ -114,57 +122,59 @@ export const Globe: React.FC<GlobeProps> = ({
     spec: THREE.Texture | null;
   }>({ day: null, night: null, spec: null });
 
-  // Load NASA Earth geographic textures
-  useEffect(() => {
-    let active = true;
-    const loader = new THREE.TextureLoader();
-
-    Promise.all([
-      loader.loadAsync('/textures/earth_day_2048.jpg'),
-      loader.loadAsync('/textures/earth_lights_2048.png'),
-      loader.loadAsync('/textures/earth_specular_2048.jpg')
-    ]).then(([day, night, spec]) => {
-      if (!active) {
-        day.dispose();
-        night.dispose();
-        spec.dispose();
-        return;
-      }
-      day.colorSpace = THREE.SRGBColorSpace;
-      night.colorSpace = THREE.SRGBColorSpace;
-      spec.colorSpace = THREE.NoColorSpace;
-
-      texturesRef.current = { day, night, spec };
-      setTexturesLoaded(true);
-    }).catch((err) => {
-      console.warn('[ATLAS] Earth texture load error:', err);
-    });
-
-    return () => {
-      active = false;
-      texturesRef.current.day?.dispose();
-      texturesRef.current.night?.dispose();
-      texturesRef.current.spec?.dispose();
-    };
-  }, []);
-
-  // Earth Shader Material
+  // Custom Earth material using physical lighting shaders
   const earthMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
+      vertexShader: earthVertexShader,
+      fragmentShader: earthFragmentShader,
       uniforms: {
         uDayMap: { value: null },
         uNightMap: { value: null },
         uSpecularMap: { value: null },
-        uSunDirection: { value: new THREE.Vector3(1.3, 0.8, 1.1).normalize() },
+        uSunDirection: { value: new THREE.Vector3(1.2, 0.8, 1.4).normalize() },
         uTime: { value: 0 },
         uTextureLoaded: { value: 0.0 }
       },
-      vertexShader: earthVertexShader,
-      fragmentShader: earthFragmentShader,
       transparent: false
     });
   }, []);
 
+  // Async texture loading pipeline with graceful fallbacks
+  useEffect(() => {
+    let isMounted = true;
+    const textureLoader = new THREE.TextureLoader();
+
+    const loadTextureAsync = (url: string): Promise<THREE.Texture> => {
+      return new Promise((resolve, reject) => {
+        textureLoader.load(url, resolve, undefined, reject);
+      });
+    };
+
+    Promise.all([
+      loadTextureAsync('/textures/earth_day_2048.jpg'),
+      loadTextureAsync('/textures/earth_lights_2048.png'),
+      loadTextureAsync('/textures/earth_specular_2048.jpg')
+    ])
+      .then(([day, night, spec]) => {
+        if (!isMounted) return;
+
+        day.colorSpace = THREE.SRGBColorSpace;
+        night.colorSpace = THREE.SRGBColorSpace;
+        spec.colorSpace = THREE.NoColorSpace;
+
+        texturesRef.current = { day, night, spec };
+        setTexturesLoaded(true);
+      })
+      .catch(() => {
+        // Fallback gracefully to high-contrast monochrome terrain
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Update uniforms when textures are ready
   useEffect(() => {
     if (texturesLoaded && texturesRef.current.day) {
       earthMaterial.uniforms.uDayMap.value = texturesRef.current.day;
@@ -180,8 +190,22 @@ export const Globe: React.FC<GlobeProps> = ({
     return properties.filter(p => isValidCoordinate(p.latitude, p.longitude));
   }, [properties]);
 
-  // Smoothly face selected property if explicitly selected
+  // Smoothly face selected country or property if explicitly selected
   useEffect(() => {
+    if (selectedCountryCode && globeGroupRef.current) {
+      const beacon = countryBeacons.find(b => b.country.toUpperCase() === selectedCountryCode.toUpperCase());
+      if (beacon) {
+        const targetPhi = (90 - beacon.latitude) * (Math.PI / 180);
+        const targetTheta = (beacon.longitude + 180) * (Math.PI / 180);
+
+        const targetY = -targetTheta + Math.PI / 2;
+        const targetX = beacon.latitude * (Math.PI / 180);
+
+        targetRotationRef.current = { x: targetX, y: targetY };
+        return;
+      }
+    }
+
     if (selectedPropertyId && globeGroupRef.current) {
       const prop = geocodedProperties.find(p => p.id === selectedPropertyId);
       if (prop) {
@@ -194,7 +218,7 @@ export const Globe: React.FC<GlobeProps> = ({
         targetRotationRef.current = { x: targetX, y: targetY };
       }
     }
-  }, [selectedPropertyId, geocodedProperties]);
+  }, [selectedCountryCode, countryBeacons, selectedPropertyId, geocodedProperties]);
 
   // Frame update: smooth rotation damping and calm continuous planetary rotation
   useFrame((_, delta) => {
@@ -266,12 +290,18 @@ export const Globe: React.FC<GlobeProps> = ({
   return (
     <group ref={globeGroupRef}>
       {/* Real Earth Sphere with Topography & Night Lights */}
-      <mesh material={earthMaterial}>
+      <mesh
+        material={earthMaterial}
+        onPointerMove={(e) => {
+          // Stop ray from penetrating through planet to backside markers
+          e.stopPropagation();
+        }}
+      >
         <sphereGeometry args={[globeRadius, 64, 64]} />
       </mesh>
 
-      {/* Cartography reference lines */}
-      <mesh>
+      {/* Cartography reference lines (pure visual, raycast disabled) */}
+      <mesh raycast={() => null}>
         <sphereGeometry args={[globeRadius * 1.0008, 36, 18]} />
         <meshBasicMaterial
           color="#c5a880"
@@ -281,16 +311,33 @@ export const Globe: React.FC<GlobeProps> = ({
         />
       </mesh>
 
-      {/* Equator Coordinate Ring */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
+      {/* Equator Coordinate Ring (pure visual, raycast disabled) */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} raycast={() => null}>
         <ringGeometry args={[globeRadius * 1.0012, globeRadius * 1.0025, 64]} />
         <meshBasicMaterial color="#c5a880" transparent opacity={0.12} side={THREE.DoubleSide} />
       </mesh>
 
       {/* ====================================================
+          SOVEREIGN JURISDICTION BEACONS (78+ COUNTRIES)
+          Every tracked sovereign nation is illuminated with a
+          golden beacon and interactive teleporter.
+          ==================================================== */}
+      {countryBeacons.map((beacon) => (
+        <CountryBeaconMarker
+          key={`beacon-${beacon.country}`}
+          beacon={beacon}
+          globeRadius={globeRadius}
+          isHovered={hoveredId === beacon.country}
+          isSelected={selectedCountryCode?.toUpperCase() === beacon.country.toUpperCase()}
+          onHover={onHoverId}
+          onSelect={(b) => {
+            if (onSelectCountry) onSelectCountry(b);
+          }}
+        />
+      ))}
+
+      {/* ====================================================
           PURE LIVE PROPERTY CARTOGRAPHY (ZERO CLUSTERS)
-          Every valid live listing is rendered directly as its
-          own distinct, subtle, luxury cartographic point on Earth.
           ==================================================== */}
       {dispersedProperties.map(({ property, displayLat, displayLng }) => {
         // Visual proxy with fan dispersion coordinates (canonical property data untouched)
@@ -308,7 +355,7 @@ export const Globe: React.FC<GlobeProps> = ({
             isHovered={hoveredId === property.id}
             isSelected={selectedPropertyId === property.id}
             onHover={onHoverId}
-            onSelect={onSelectProperty}
+            onSelect={onSelectProperty || (() => {})}
           />
         );
       })}

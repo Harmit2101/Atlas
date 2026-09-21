@@ -19,9 +19,21 @@ export const SpatialFallback2D: React.FC<SpatialFallback2DProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
-            <Box className="w-3.5 h-3.5" />
-            <span>2D Architectural Technical Schedule</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
+              <Box className="w-3.5 h-3.5" />
+              <span>2D Architectural Technical Schedule</span>
+            </div>
+            <span
+              className="px-2 py-0.5 rounded text-[9px] font-mono-luxury uppercase tracking-wider font-semibold border"
+              style={{
+                color: metrics.capability.badgeColor,
+                borderColor: `${metrics.capability.badgeColor}40`,
+                backgroundColor: `${metrics.capability.badgeColor}10`
+              }}
+            >
+              {metrics.capability.badgeLabel}
+            </span>
           </div>
           <h3 className="font-editorial text-xl text-[#f4f2ec]">
             {property.title}
@@ -81,26 +93,34 @@ export const SpatialFallback2D: React.FC<SpatialFallback2DProps> = ({
         </div>
       </div>
 
-      {/* Conceptual Zone Allocations */}
+      {/* Structural Envelope Breakdown */}
       <div className="space-y-3">
         <div className="text-[10px] font-mono-luxury uppercase tracking-widest text-[#8e8d93]">
-          Conceptual Volume Allocations ({metrics.zones.length} Zones)
+          Verified Architectural Envelope & Vertical Stacking
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {metrics.zones.map((zone) => (
-            <div key={zone.id} className="flex items-center justify-between p-3 rounded bg-white/[0.02] border border-white/[0.05]">
-              <span className="text-xs text-[#f4f2ec] font-medium">{zone.label}</span>
-              <span className="text-[10px] font-mono-luxury text-[#c5a880] uppercase tracking-wider">
-                {zone.role}
-              </span>
-            </div>
-          ))}
+          <div className="p-3 rounded bg-white/[0.02] border border-white/[0.05] space-y-1">
+            <div className="text-[10px] font-mono-luxury text-[#8e8d93] uppercase tracking-wider">Vertical Hierarchy</div>
+            <div className="text-xs text-[#f4f2ec] font-medium">{metrics.floorStackingLabel}</div>
+          </div>
+          <div className="p-3 rounded bg-white/[0.02] border border-white/[0.05] space-y-1">
+            <div className="text-[10px] font-mono-luxury text-[#8e8d93] uppercase tracking-wider">Volumetric Height</div>
+            <div className="text-xs text-[#f4f2ec] font-medium">{metrics.dimensions.height}m envelope clearance</div>
+          </div>
+          <div className="p-3 rounded bg-white/[0.02] border border-white/[0.05] space-y-1">
+            <div className="text-[10px] font-mono-luxury text-[#8e8d93] uppercase tracking-wider">Verified Footprint</div>
+            <div className="text-xs text-[#f4f2ec] font-medium">{metrics.sqmLabel}</div>
+          </div>
+          <div className="p-3 rounded bg-white/[0.02] border border-white/[0.05] space-y-1">
+            <div className="text-[10px] font-mono-luxury text-[#8e8d93] uppercase tracking-wider">Architectural Typology</div>
+            <div className="text-xs text-[#c5a880] font-medium uppercase tracking-wider">{metrics.typology} massing</div>
+          </div>
         </div>
       </div>
 
       <div className="pt-2 flex items-center gap-2 text-[10px] text-[#8e8d93] border-t border-white/[0.05]">
         <ShieldCheck className="w-3.5 h-3.5 text-[#c5a880] shrink-0" />
-        <span>Derived strictly from verified Untera MLS data records. No literal layout fabricated.</span>
+        <span>{metrics.disclaimer}</span>
       </div>
     </div>
   );

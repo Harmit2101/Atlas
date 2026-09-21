@@ -82,6 +82,7 @@ export function useProperties(filter: PropertyFilterState = {}) {
     filter.destinationId,
     filter.propertyType,
     filter.transactionType,
+    filter.tier,
     filter.minPrice,
     filter.maxPrice,
     filter.bedrooms,

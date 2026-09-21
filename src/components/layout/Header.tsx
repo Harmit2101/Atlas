@@ -27,10 +27,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch }) => {
     : [
         { label: 'EXPLORE', path: '/explore' },
         { label: 'MARKETS', path: '/markets' },
-        { label: 'PRIVATE CLIENT', path: '/private-client' },
         { label: 'ABOUT', path: '/about' },
         { label: 'CONTACT', path: '/contact' }
       ];
+
 
   const isActive = (path: string) => {
     if (path.includes('?')) {

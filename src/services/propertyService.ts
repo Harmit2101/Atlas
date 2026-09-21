@@ -1,50 +1,22 @@
-import { AtlasProperty, PropertyFilterState, UnteraRawListing } from '@/types/property';
+import { AtlasProperty, PropertyFilterState, UnteraRawListing, ListingIntent, RentalPeriod } from '@/types/property';
 import { searchListings, getListing, isUnteraConfigured } from '@/lib/untera';
 import { resolveListingLocation } from '@/services/geoService';
 import { fetchGlobalDiscoveryFeed } from '@/services/globalDiscoveryService';
+import { isHighValueSale, isUltraLuxuryRental, resolveUsdValuation } from '@/services/inventoryRules';
 
-/**
- * Resolves full, valid image URLs strictly from the listing's actual data.
- * Supports both absolute CDN URLs and Untera relative image paths.
- * Returns empty array if no genuine listing imagery is present.
- * NEVER returns a fake or hardcoded fallback image.
- */
-export function normalizeListingImages(raw: UnteraRawListing): string[] {
-  const candidates: any[] = [];
-  if (Array.isArray(raw.images)) candidates.push(...raw.images);
-  if (Array.isArray(raw.photos)) candidates.push(...raw.photos);
-  if (typeof (raw as any).image === 'string') candidates.push((raw as any).image);
-  if (typeof (raw as any).photo === 'string') candidates.push((raw as any).photo);
-  if (typeof (raw as any).image_url === 'string') candidates.push((raw as any).image_url);
-  if (typeof (raw as any).imageUrl === 'string') candidates.push((raw as any).imageUrl);
+import { 
+  normalizeListingMedia, 
+  NormalizedListingMedia, 
+  normalizeListingImages, 
+  extractListingFloorPlans 
+} from '@/services/mediaService';
 
-  const images: string[] = [];
-  const seen = new Set<string>();
-
-  for (const item of candidates) {
-    if (typeof item !== 'string') continue;
-    const trimmed = item.trim();
-    if (!trimmed) continue;
-
-    let url: string;
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      url = trimmed;
-    } else if (trimmed.startsWith('//')) {
-      url = `https:${trimmed}`;
-    } else if (trimmed.startsWith('/')) {
-      url = `https://api.untera.io${trimmed}`;
-    } else {
-      url = `https://api.untera.io/${trimmed}`;
-    }
-
-    if (!seen.has(url)) {
-      seen.add(url);
-      images.push(url);
-    }
-  }
-
-  return images;
-}
+export { 
+  normalizeListingMedia, 
+  normalizeListingImages, 
+  extractListingFloorPlans 
+};
+export type { NormalizedListingMedia };
 
 /**
  * Normalizes bedroom count from raw Untera data.
@@ -108,28 +80,79 @@ export function normalizeBathroomCount(raw: UnteraRawListing): number {
 }
 
 /**
+ * Normalizes listing intent: 'sale' | 'rent' | 'unknown'.
+ * Never infers intent from arbitrary text if reliable source field exists.
+ */
+export function normalizeListingIntent(raw: UnteraRawListing): ListingIntent {
+  const rawTx = (raw.transaction || raw.transaction_type || '').trim().toLowerCase();
+  if (rawTx === 'rent' || rawTx === 'rental' || rawTx === 'lease') return 'rent';
+  if (rawTx === 'sale' || rawTx === 'buy' || rawTx === 'purchase') return 'sale';
+
+  const rawSubtype = ((raw as any).listing_type || (raw as any).intent || '').trim().toLowerCase();
+  if (rawSubtype.includes('rent') || rawSubtype.includes('lease')) return 'rent';
+  if (rawSubtype.includes('sale')) return 'sale';
+
+  if (raw.rental_period || raw.rent_period || raw.price_period) return 'rent';
+
+  // Default to sale for global MLS unless rental parameters exist
+  return 'sale';
+}
+
+/**
+ * Normalizes rental period: 'day' | 'week' | 'month' | 'year' | 'unknown'.
+ * CRITICAL: A rental of $5,000/month is NOT $5,000/day.
+ */
+export function normalizeRentalPeriod(raw: UnteraRawListing, intent: ListingIntent): RentalPeriod | undefined {
+  if (intent !== 'rent') return undefined;
+
+  const direct = String(raw.rental_period || raw.rent_period || raw.price_period || raw.period || raw.frequency || '').trim().toLowerCase();
+  if (direct.includes('day') || direct.includes('daily') || direct === 'd' || direct === 'night' || direct === 'nightly') return 'day';
+  if (direct.includes('week') || direct.includes('weekly') || direct === 'w') return 'week';
+  if (direct.includes('month') || direct.includes('monthly') || direct === 'm') return 'month';
+  if (direct.includes('year') || direct.includes('annual') || direct === 'y') return 'year';
+
+  const titleAndDesc = `${raw.title || ''} ${raw.description || ''}`.toLowerCase();
+  if (/\b(per day|a day|\/day|daily rate|nightly|per night)\b/.test(titleAndDesc)) return 'day';
+  if (/\b(per week|a week|\/week|weekly rate)\b/.test(titleAndDesc)) return 'week';
+  if (/\b(per month|a month|\/month|monthly rate)\b/.test(titleAndDesc)) return 'month';
+  if (/\b(per year|a year|\/year|annually)\b/.test(titleAndDesc)) return 'year';
+
+  return 'unknown';
+}
+
+/**
  * Normalizes a raw Untera API listing into the consistent AtlasProperty domain model.
  * Strictly preserves genuine Untera data with zero fabricated metrics or imagery.
  */
 export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
   const id = String(raw.id || raw.source_id || `prop-${Math.random().toString(36).substring(7)}`);
-  const priceUsd = Number(raw.price_usd || raw.price || 0);
-  const originalPrice = raw.original_price != null ? Number(raw.original_price) : null;
-  const originalCurrency = raw.original_currency || raw.currency || 'USD';
+  const rawPrice = Number(raw.original_price ?? raw.price ?? 0);
+  const originalCurrency = (raw.original_currency || raw.currency || 'USD').trim().toUpperCase();
+  const rawPriceUsd = raw.price_usd != null ? Number(raw.price_usd) : null;
+  
+  // Safe valuation calculation - foreign currencies never silently treated as USD
+  const valuation = resolveUsdValuation(rawPrice, originalCurrency, rawPriceUsd);
+  const priceUsd = valuation.priceUsd;
 
-  // Format price display
-  let priceFormatted = priceUsd > 0 ? `$${priceUsd.toLocaleString()}` : 'Price on Inquiry';
-  if (originalCurrency && originalCurrency !== 'USD' && originalPrice) {
-    priceFormatted = `${originalCurrency} ${originalPrice.toLocaleString()} ($${priceUsd.toLocaleString()})`;
-  } else if (originalCurrency === 'EUR' && originalPrice) {
-    priceFormatted = `€${originalPrice.toLocaleString()}`;
-  } else if (originalCurrency === 'GBP' && originalPrice) {
-    priceFormatted = `£${originalPrice.toLocaleString()}`;
+  // Format price display with honest currency labeling
+  let priceFormatted = 'Price on Inquiry';
+  if (rawPrice > 0) {
+    if (originalCurrency === 'USD') {
+      priceFormatted = `$${rawPrice.toLocaleString()}`;
+    } else if (originalCurrency === 'EUR') {
+      priceFormatted = `€${rawPrice.toLocaleString()}${valuation.isVerified ? ` ($${priceUsd.toLocaleString()})` : ''}`;
+    } else if (originalCurrency === 'GBP') {
+      priceFormatted = `£${rawPrice.toLocaleString()}${valuation.isVerified ? ` ($${priceUsd.toLocaleString()})` : ''}`;
+    } else {
+      priceFormatted = `${originalCurrency} ${rawPrice.toLocaleString()}${valuation.isVerified ? ` ($${priceUsd.toLocaleString()})` : ''}`;
+    }
   }
 
-  // Extract legitimate listing images (empty array if no photos provided by Untera)
-  const images = normalizeListingImages(raw);
-  const imageUrl = images[0] || undefined;
+  // Extract legitimate listing media (empty arrays if no media provided by Untera)
+  const media = normalizeListingMedia(raw);
+  const images = media.images;
+  const imageUrl = media.primaryImage || images[0] || undefined;
+  const floorPlans = media.floorPlans;
 
   const lat = Number(raw.latitude ?? raw.lat ?? 0);
   const lng = Number(raw.longitude ?? raw.lng ?? 0);
@@ -157,7 +180,36 @@ export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
     ? rawType.trim().charAt(0).toUpperCase() + rawType.trim().slice(1)
     : 'Property';
 
-  const transactionType = (raw.transaction || raw.transaction_type || 'sale').toLowerCase() === 'rent' ? 'rent' : 'sale';
+  const listingIntent = normalizeListingIntent(raw);
+  const rentalPeriod = normalizeRentalPeriod(raw, listingIntent);
+  const transactionType = listingIntent === 'rent' ? 'rent' : 'sale';
+
+  const isHighValue = isHighValueSale({
+    listingIntent,
+    transactionType,
+    priceUsd,
+    price: rawPrice,
+    currency: originalCurrency
+  });
+
+  const isUltraLuxury = isUltraLuxuryRental({
+    listingIntent,
+    transactionType,
+    rentalPeriod,
+    priceUsd,
+    price: rawPrice,
+    currency: originalCurrency
+  });
+
+  // Future-ready spatial source classification
+  let spatialSource: 'room_geometry' | 'floor_plan' | 'metadata_massing' | 'none' = 'none';
+  if ((raw as any).room_dimensions || (raw as any).rooms_geometry) {
+    spatialSource = 'room_geometry';
+  } else if (floorPlans.length > 0) {
+    spatialSource = 'floor_plan';
+  } else if (areaSqm > 0 || areaSqft > 0) {
+    spatialSource = 'metadata_massing';
+  }
 
   const description = (raw.description || '').trim();
   const title = (raw.title && raw.title.trim()) || `${cleanPropType} in ${city || country || 'Global MLS'}`;
@@ -171,7 +223,7 @@ export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
     title,
     subtitle,
     description,
-    price: originalPrice || priceUsd,
+    price: rawPrice,
     priceFormatted,
     priceUsd,
     currency: originalCurrency,
@@ -185,6 +237,12 @@ export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
     longitude: lng,
     propertyType: cleanPropType,
     transactionType,
+    listingIntent,
+    rentalPeriod,
+    isHighValueSale: isHighValue,
+    isUltraLuxuryRental: isUltraLuxury,
+    floorPlans,
+    spatialSource,
     bedrooms: normalizeBedroomCount(raw),
     bathrooms: normalizeBathroomCount(raw),
     areaSqm,
@@ -192,6 +250,9 @@ export function normalizeUnteraListing(raw: UnteraRawListing): AtlasProperty {
     yearBuilt: raw.year_built || undefined,
     images,
     imageUrl,
+    primaryImage: media.primaryImage,
+    videos: media.videos,
+    virtualTours: media.virtualTours,
     features: Array.from(new Set(features)).slice(0, 8),
     curatorNotes: (raw as any).curator_notes || undefined,
     listedAt: raw.created_at || new Date().toISOString(),
@@ -233,16 +294,19 @@ export async function fetchProperties(
   }
 
   // Determine whether user has applied any explicit search/filter criteria
+  const hasTierFilter = Boolean(filter.tier && filter.tier !== 'all');
+  const hasTransactionFilter = Boolean(filter.transactionType && filter.transactionType !== 'all');
   const isUserSearch = Boolean(
     filter.country ||
     filter.location ||
     filter.searchQuery ||
+    hasTierFilter ||
+    hasTransactionFilter ||
     (filter.minPrice !== undefined && filter.minPrice > 0) ||
     (filter.maxPrice !== undefined && filter.maxPrice < 200000000) ||
     filter.bedrooms ||
     filter.bathrooms ||
     (filter.propertyType && filter.propertyType !== 'all') ||
-    (filter.transactionType && filter.transactionType !== 'all') ||
     (filter.sortBy && filter.sortBy !== 'featured')
   );
 
@@ -253,28 +317,77 @@ export async function fetchProperties(
 
   // MODE B: TARGETED USER SEARCH (Single direct query for user-specified criteria)
   try {
+    // Resolve transaction filter based on intent and commercial tier
+    let transactionParam = filter.transactionType && filter.transactionType !== 'all' ? filter.transactionType : undefined;
+    const isRent = filter.transactionType === 'rent' || filter.tier === 'ultra-luxury-rent';
+    const defaultLuxuryFloor = isRent ? 5000 : 300000;
+    let minPriceParam = filter.minPrice !== undefined && filter.minPrice > 0
+      ? Math.max(filter.minPrice, defaultLuxuryFloor)
+      : defaultLuxuryFloor;
+
+    if (filter.tier === 'high-value-sale') {
+      transactionParam = 'sale';
+      minPriceParam = Math.max(filter.minPrice || 0, 300000);
+    } else if (filter.tier === 'ultra-luxury-rent') {
+      transactionParam = 'rent';
+      minPriceParam = Math.max(filter.minPrice || 0, 5000);
+    }
+
+    // Pass true geographic location into Untera location param, avoiding conflation with keywords
+    const locationParam = filter.location || filter.country || undefined;
+
     const response = await searchListings({
       country: filter.country || undefined,
-      location: filter.location || filter.searchQuery || filter.country || undefined,
-      minPrice: filter.minPrice,
+      location: locationParam,
+      minPrice: minPriceParam,
       maxPrice: filter.maxPrice,
       minBeds: filter.bedrooms ? parseInt(filter.bedrooms, 10) : undefined,
       minBaths: filter.bathrooms ? parseInt(filter.bathrooms, 10) : undefined,
       minSqm: filter.minSqm,
       maxSqm: filter.maxSqm,
-      type: filter.propertyType,
-      transaction: filter.transactionType,
+      type: filter.propertyType && filter.propertyType !== 'all' ? filter.propertyType : undefined,
+      transaction: transactionParam,
       sort: filter.sortBy,
       page: filter.page || 1,
       pageSize: filter.pageSize || 24
     }, signal);
 
     const rawListings = response.results || response.listings || response.data || [];
-    const properties = rawListings.map(normalizeUnteraListing);
+    let properties = rawListings.map(normalizeUnteraListing);
+
+    // Strictly enforce Atlas high-end inventory floor ($300k+ USD for sales, $5k+ for rentals)
+    properties = properties.filter(p => {
+      if (p.listingIntent === 'rent' || p.transactionType === 'rent') {
+        return p.priceUsd >= 5000;
+      }
+      return p.priceUsd >= 300000;
+    });
+
+    // Apply strict commercial qualification filters if requested
+    if (filter.tier === 'high-value-sale') {
+      properties = properties.filter(p => p.isHighValueSale);
+    } else if (filter.tier === 'ultra-luxury-rent') {
+      properties = properties.filter(p => p.isUltraLuxuryRental);
+    } else if (filter.transactionType && filter.transactionType !== 'all') {
+      properties = properties.filter(p => p.listingIntent === filter.transactionType || p.transactionType === filter.transactionType);
+    }
+
+    // Apply client-side keyword matching if searchQuery was specified separately from geographic location
+    if (filter.searchQuery && filter.searchQuery.trim()) {
+      const q = filter.searchQuery.trim().toLowerCase();
+      properties = properties.filter(p => 
+        p.title.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.propertyType.toLowerCase().includes(q) ||
+        p.city.toLowerCase().includes(q) ||
+        p.country.toLowerCase().includes(q) ||
+        p.features.some(f => f.toLowerCase().includes(q))
+      );
+    }
 
     return {
       properties,
-      total: response.count || response.total || properties.length,
+      total: properties.length >= 24 ? (response.count || response.total || properties.length) : properties.length,
       page: response.page || filter.page || 1,
       pageSize: response.page_size || filter.pageSize || 24,
       isLive: true,
@@ -351,4 +464,3 @@ export async function fetchPropertyById(
   console.warn('[ATLAS] Live property lookup failed for ID and all candidate variants:', id);
   return null;
 }
-

@@ -6,6 +6,7 @@ import { useSavedProperties } from '@/hooks/useSavedProperties';
 import { useAuth } from '@/hooks/useAuth';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
+import { usePropertyImage } from '@/hooks/usePropertyImage';
 
 interface PropertyCardProps {
   property: AtlasProperty;
@@ -16,8 +17,32 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
   const { user } = useAuth();
   const { isSaved, toggleSave } = useSavedProperties();
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
+
+  // Candidate images list preserving source order and fallbacks
+  const candidateImages = React.useMemo(() => {
+    const list: string[] = [];
+    if (property.primaryImage) list.push(property.primaryImage);
+    if (property.imageUrl && !list.includes(property.imageUrl)) list.push(property.imageUrl);
+    if (property.images && property.images.length > 0) {
+      property.images.forEach(img => {
+        if (img && !list.includes(img)) list.push(img);
+      });
+    }
+    return list;
+  }, [property.primaryImage, property.imageUrl, property.images]);
+
+  const {
+    currentUrl,
+    imageLoaded,
+    hasValidImage,
+    imgRef,
+    handleLoad,
+    handleError
+  } = usePropertyImage({
+    propertyId: property.id,
+    candidateUrls: candidateImages,
+    sourceProvider: property.sourceName
+  });
 
   const saved = isSaved(property.id);
 
@@ -37,9 +62,6 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
     toggleSave(property.id, property.sourceName);
   };
 
-  const rawImageUrl = property.images && property.images.length > 0 ? property.images[0] : null;
-  const hasValidImage = Boolean(rawImageUrl) && !imageError;
-
   return (
     <>
       <div id={`property-${property.id}`} className="group relative bg-[#111116] border border-white/[0.08] hover:border-[#c5a880]/40 rounded-sm overflow-hidden flex flex-col transition-all duration-500 hover:shadow-2xl">
@@ -49,7 +71,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
           className="relative aspect-[16/10] overflow-hidden bg-black/40 block"
           data-cursor="VIEW"
         >
-          {hasValidImage ? (
+          {hasValidImage && currentUrl ? (
             <>
               {/* Blur skeleton placeholder while image loads */}
               {!imageLoaded && (
@@ -57,12 +79,14 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
               )}
 
               <img
-                src={rawImageUrl!}
+                ref={imgRef}
+                key={`card-media-${property.id}-${currentUrl}`}
+                src={currentUrl}
                 alt={property.title}
-                crossOrigin="anonymous"
                 loading={priority ? 'eager' : 'lazy'}
-                onLoad={() => setImageLoaded(true)}
-                onError={() => setImageError(true)}
+                decoding="async"
+                onLoad={handleLoad}
+                onError={handleError}
                 className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-105 ${
                   imageLoaded ? 'opacity-100' : 'opacity-0'
                 }`}
@@ -87,14 +111,34 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
             </div>
           )}
 
-          {/* Status Pill */}
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] font-mono-luxury uppercase tracking-widest px-2 py-0.5 rounded bg-[#08080a]/80 backdrop-blur-md border border-white/10 text-[#f4f2ec]">
-              {property.status || (property.isLive ? 'Verified MLS' : 'Sample Asset')}
+          {/* Status, Intent, and Tier Badges */}
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap z-10">
+            {/* Primary Intent Badge */}
+            <span
+              className={`text-[9.5px] font-mono-luxury uppercase tracking-widest px-2.5 py-0.5 rounded shadow-lg font-semibold ${
+                property.listingIntent === 'rent'
+                  ? 'bg-[#152033]/90 text-[#8ec5fc] border border-[#3b5b8c]'
+                  : 'bg-[#c5a880] text-[#08080a]'
+              }`}
+            >
+              {property.listingIntent === 'rent' ? 'FOR RENT' : 'FOR SALE'}
             </span>
+
+            {/* Commercial Inventory Tier Qualification */}
+            {property.isHighValueSale && (
+              <span className="text-[8.5px] font-mono-luxury uppercase px-2 py-0.5 rounded bg-[#08080a]/90 border border-[#c5a880]/60 text-[#c5a880] tracking-wider font-medium">
+                $300K+ Qualified
+              </span>
+            )}
+            {property.isUltraLuxuryRental && (
+              <span className="text-[8.5px] font-mono-luxury uppercase px-2 py-0.5 rounded bg-[#08080a]/90 border border-[#8ec5fc]/60 text-[#8ec5fc] tracking-wider font-medium">
+                $5K+/Day Qualified
+              </span>
+            )}
+
             {property.isLive && (
-              <span className="text-[9px] font-mono-luxury uppercase px-2 py-0.5 rounded bg-[#c5a880]/20 border border-[#c5a880]/50 text-[#c5a880]">
-                Live
+              <span className="text-[8.5px] font-mono-luxury uppercase px-2 py-0.5 rounded bg-black/70 border border-white/10 text-[#8e8d93]">
+                Live MLS
               </span>
             )}
           </div>
@@ -103,7 +147,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
           <button
             onClick={handleBookmarkClick}
             aria-label={saved ? 'Remove from saved' : 'Save property to portfolio'}
-            className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md border transition-all ${
+            className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md border transition-all z-10 ${
               saved
                 ? 'bg-[#c5a880] text-[#08080a] border-[#c5a880]'
                 : 'bg-[#08080a]/70 text-[#f4f2ec] border-white/10 hover:border-[#c5a880]'
@@ -142,7 +186,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
 
           {/* Specs & Price */}
           <div className="mt-5 pt-4 border-t border-white/[0.06] space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-end justify-between gap-2">
               <div className="flex items-center gap-3 text-xs text-[#8e8d93]">
                 {property.bedrooms > 0 && (
                   <div className="flex items-center gap-1">
@@ -164,11 +208,19 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
                 )}
               </div>
 
-              {/* Price */}
-              <div className="text-right">
-                <span className="font-mono-luxury text-sm font-semibold text-[#f4f2ec] tracking-wide">
+              {/* Price with Rental Period */}
+              <div className="text-right shrink-0">
+                <div className="text-[9px] font-mono-luxury uppercase tracking-widest text-[#8e8d93]">
+                  {property.listingIntent === 'rent' ? 'LEASE RATE' : 'VALUATION'}
+                </div>
+                <div className="font-mono-luxury text-sm sm:text-base font-semibold text-[#f4f2ec] tracking-wide">
                   {property.priceFormatted}
-                </span>
+                  {property.listingIntent === 'rent' && property.rentalPeriod && property.rentalPeriod !== 'unknown' && (
+                    <span className="text-xs text-[#c5a880] font-normal ml-1">
+                      / {property.rentalPeriod.toUpperCase()}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -181,6 +233,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
           </div>
         </div>
       </div>
+
 
       {/* Auth Prompt Modal */}
       <AuthModal

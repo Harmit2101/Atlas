@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { getCloudAvailability } from '@/services/authService';
 import { 
   DealerOrganization, 
   DealerMember, 
@@ -12,6 +13,8 @@ import {
   PropertyAccessRequest
 } from '@/types/commercial';
 import { AtlasProperty } from '@/types/property';
+
+const isCloudActive = () => isSupabaseConfigured && getCloudAvailability();
 
 const LOCAL_DEALERS_KEY = 'atlas_local_dealer_orgs';
 const LOCAL_DEALER_PROPERTIES_KEY = 'atlas_local_dealer_properties';
@@ -42,7 +45,7 @@ function writeStorage<T>(key: string, data: T[]): void {
 // DEALER ORGANIZATIONS
 // -------------------------------------------------------------
 export async function fetchDealers(filter?: { status?: DealerOrganization['status'] }): Promise<DealerOrganization[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let q = supabase.from('dealer_organizations').select('*').order('name');
       if (filter?.status) q = q.eq('status', filter.status);
@@ -101,7 +104,7 @@ export async function createDealerOrganization(input: {
     updated_at: new Date().toISOString()
   };
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { data, error } = await supabase.from('dealer_organizations').insert([org]).select().single();
       if (!error && data) return { data: data as DealerOrganization, error: null };
@@ -122,7 +125,7 @@ export async function updateDealerStatus(
   status: DealerOrganization['status'], 
   commercialStatus?: DealerOrganization['commercial_status']
 ): Promise<{ success: boolean }> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const updateData: any = { status, updated_at: new Date().toISOString() };
       if (commercialStatus) updateData.commercial_status = commercialStatus;
@@ -146,7 +149,7 @@ export async function updateDealerStatus(
 // DIRECT DEALER PROPERTIES
 // -------------------------------------------------------------
 export async function fetchDealerProperties(dealerId?: string): Promise<DealerProperty[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let q = supabase.from('dealer_properties').select('*').order('created_at', { ascending: false });
       if (dealerId) q = q.eq('dealer_id', dealerId);
@@ -167,7 +170,7 @@ export async function createDealerProperty(property: Omit<DealerProperty, 'id' |
     updated_at: new Date().toISOString()
   };
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { data, error } = await supabase.from('dealer_properties').insert([newProp]).select().single();
       if (!error && data) return { data: data as DealerProperty, error: null };
@@ -216,7 +219,12 @@ export function convertDealerPropertyToAtlas(dp: DealerProperty, dealerName?: st
     curatorNotes: `Direct Partner Mandate via ${dealerName || 'Exclusive Dealer Network'}.`,
     isLive: true,
     status: dp.availability_status,
-    featured: true
+    featured: true,
+    listingIntent: dp.transaction_type === 'rent' ? 'rent' : 'sale',
+    rentalPeriod: dp.transaction_type === 'rent' ? 'month' : undefined,
+    isHighValueSale: dp.transaction_type === 'sale' && dp.price >= 300000,
+    isUltraLuxuryRental: false,
+    floorPlans: []
   };
 }
 
@@ -224,7 +232,7 @@ export function convertDealerPropertyToAtlas(dp: DealerProperty, dealerName?: st
 // BUYER PREFERENCES & MATCHING ENGINE (Deterministic, Zero AI)
 // -------------------------------------------------------------
 export async function getBuyerPreferences(userId: string): Promise<BuyerPreferences | null> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { data, error } = await supabase
         .from('buyer_preferences')
@@ -245,7 +253,7 @@ export async function saveBuyerPreferences(prefs: Omit<BuyerPreferences, 'id' | 
     updated_at: new Date().toISOString()
   };
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase
         .from('buyer_preferences')
@@ -364,7 +372,7 @@ export async function assignLeadToDealer(
     assigned_at: new Date().toISOString()
   };
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase.from('lead_assignments').insert([assignment]);
       if (!error) {
@@ -387,7 +395,7 @@ export async function assignLeadToDealer(
 }
 
 export async function fetchLeadAssignments(dealerId?: string): Promise<LeadAssignment[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let q = supabase.from('lead_assignments').select('*').order('assigned_at', { ascending: false });
       if (dealerId) q = q.eq('dealer_id', dealerId);
@@ -408,7 +416,7 @@ export async function updateLeadAssignmentStatus(
   if (status === 'accepted') updatePayload.accepted_at = new Date().toISOString();
   if (status === 'rejected') updatePayload.rejected_at = new Date().toISOString();
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase.from('lead_assignments').update(updatePayload).eq('id', id);
       if (!error) return { success: true };
@@ -431,7 +439,7 @@ export async function updateLeadAssignmentStatus(
 // COMMERCIAL AGREEMENTS, REFERRALS & COMMISSION LEDGER
 // -------------------------------------------------------------
 export async function fetchDealerAgreements(dealerId?: string): Promise<DealerAgreement[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let q = supabase.from('dealer_agreements').select('*').order('created_at', { ascending: false });
       if (dealerId) q = q.eq('dealer_id', dealerId);
@@ -445,7 +453,7 @@ export async function fetchDealerAgreements(dealerId?: string): Promise<DealerAg
 }
 
 export async function fetchReferrals(dealerId?: string): Promise<Referral[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let q = supabase.from('referrals').select('*').order('created_at', { ascending: false });
       if (dealerId) q = q.eq('dealer_id', dealerId);
@@ -459,7 +467,7 @@ export async function fetchReferrals(dealerId?: string): Promise<Referral[]> {
 }
 
 export async function fetchCommissionRecords(): Promise<CommissionRecord[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { data, error } = await supabase.from('commission_records').select('*').order('created_at', { ascending: false });
       if (!error && data) return data as CommissionRecord[];
@@ -485,7 +493,7 @@ export async function submitPropertyAccessRequest(input: {
     created_at: new Date().toISOString()
   };
 
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       const { error } = await supabase.from('property_access_requests').insert([req]);
       if (!error) return { success: true };
@@ -501,7 +509,7 @@ export async function submitPropertyAccessRequest(input: {
 }
 
 export async function fetchPropertyAccessRequests(buyerId?: string): Promise<PropertyAccessRequest[]> {
-  if (isSupabaseConfigured) {
+  if (isCloudActive()) {
     try {
       let q = supabase.from('property_access_requests').select('*').order('created_at', { ascending: false });
       if (buyerId) q = q.eq('buyer_id', buyerId);

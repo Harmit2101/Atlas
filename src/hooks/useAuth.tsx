@@ -1,20 +1,27 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserProfile } from '@/types/user';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { UserProfile, AuthMode } from '@/types/user';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { 
   signInWithEmail, 
   signUpWithEmail, 
   signOutUser, 
   resetPasswordEmail,
-  getLocalUser 
+  getLocalUser,
+  getCloudAvailability,
+  setCloudAvailability,
+  probeCloudHealth,
+  CloudHealthState
 } from '@/services/authService';
 
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   isConfigured: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, displayName?: string) => Promise<{ error: string | null }>;
+  authMode: AuthMode;
+  isCloudAvailable: boolean;
+  cloudHealth: CloudHealthState;
+  signIn: (email: string, password: string) => Promise<{ error: string | null; mode?: AuthMode }>;
+  signUp: (email: string, password: string, displayName?: string) => Promise<{ error: string | null; mode?: AuthMode }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>;
 }
@@ -24,112 +31,171 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cloudHealth, setCloudHealth] = useState<CloudHealthState>(() => {
+    if (!isSupabaseConfigured) return 'CLOUD_UNAVAILABLE';
+    return getCloudAvailability() ? 'CLOUD_AVAILABLE' : 'CLOUD_UNAVAILABLE';
+  });
+  const [authMode, setAuthMode] = useState<AuthMode>(() => {
+    return isSupabaseConfigured && getCloudAvailability() ? 'cloud' : 'demo';
+  });
+
+  const initializeAuth = useCallback(async () => {
+    let activeUser: UserProfile | null = null;
+    let mode: AuthMode = 'demo';
+
+    if (isSupabaseConfigured) {
+      setCloudHealth('CLOUD_CHECKING');
+      try {
+        // Active probe to ensure we don't stay locked in demo mode once cloud recovers
+        const isHealthy = await probeCloudHealth();
+
+        if (isHealthy) {
+          setCloudHealth('CLOUD_AVAILABLE');
+          setCloudAvailability(true);
+          mode = 'cloud';
+
+          const { data } = await supabase.auth.getSession();
+          if (data?.session?.user) {
+            let role: any = 'buyer';
+            let buyerStatus: any = 'verified';
+            let displayName = data.session.user.user_metadata?.display_name || data.session.user.email?.split('@')[0] || 'Member';
+            let avatarUrl = data.session.user.user_metadata?.avatar_url;
+
+            try {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('id, display_name, avatar_url')
+                .eq('id', data.session.user.id)
+                .maybeSingle();
+              if (prof) {
+                if (prof.display_name) displayName = prof.display_name;
+                if (prof.avatar_url) avatarUrl = prof.avatar_url;
+              }
+            } catch {}
+
+            activeUser = {
+              id: data.session.user.id,
+              email: data.session.user.email || '',
+              displayName,
+              avatarUrl,
+              role,
+              buyerStatus,
+              createdAt: data.session.user.created_at,
+              isDemo: false
+            };
+          } else {
+            activeUser = null;
+          }
+        } else {
+          setCloudHealth('CLOUD_UNAVAILABLE');
+          setCloudAvailability(false);
+          activeUser = getLocalUser();
+          mode = 'demo';
+        }
+      } catch (e: any) {
+        setCloudHealth('CLOUD_UNAVAILABLE');
+        setCloudAvailability(false);
+        activeUser = getLocalUser();
+        mode = 'demo';
+      }
+    } else {
+      setCloudHealth('CLOUD_UNAVAILABLE');
+      activeUser = getLocalUser();
+      mode = 'demo';
+    }
+
+    // If in demo mode and no active user loaded, read local fallback
+    if (mode === 'demo' && !activeUser) {
+      activeUser = getLocalUser();
+    }
+
+    setUser(activeUser);
+    setAuthMode(mode);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
-
-    async function initializeAuth() {
-      if (isSupabaseConfigured) {
-        try {
-          const { data } = await supabase.auth.getSession();
-          if (mounted) {
-            if (data.session?.user) {
-              let role: any = 'buyer';
-              let buyerStatus: any = 'registered';
-              try {
-                const { data: prof } = await supabase
-                  .from('profiles')
-                  .select('role, buyer_status')
-                  .eq('id', data.session.user.id)
-                  .maybeSingle();
-                if (prof) {
-                  if (prof.role) role = prof.role;
-                  if (prof.buyer_status) buyerStatus = prof.buyer_status;
-                }
-              } catch {}
-
-              setUser({
-                id: data.session.user.id,
-                email: data.session.user.email || '',
-                displayName: data.session.user.user_metadata?.display_name || data.session.user.email?.split('@')[0] || 'Member',
-                avatarUrl: data.session.user.user_metadata?.avatar_url,
-                role,
-                buyerStatus,
-                createdAt: data.session.user.created_at
-              });
-            } else {
-              setUser(null);
-            }
-          }
-        } catch (e) {
-          console.warn('[ATLAS] Supabase auth session check failed:', e);
-          if (mounted) setUser(getLocalUser());
-        }
-      } else {
-        if (mounted) setUser(getLocalUser());
-      }
-      if (mounted) setLoading(false);
-    }
-
     initializeAuth();
 
-    // Subscribe to Supabase auth state changes if configured
-    if (isSupabaseConfigured) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          let role: any = 'buyer';
-          let buyerStatus: any = 'registered';
-          try {
-            const { data: prof } = await supabase
-              .from('profiles')
-              .select('role, buyer_status')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            if (prof) {
-              if (prof.role) role = prof.role;
-              if (prof.buyer_status) buyerStatus = prof.buyer_status;
-            }
-          } catch {}
+    // Subscribe to Supabase auth state changes if configured and cloud available
+    if (isSupabaseConfigured && getCloudAvailability()) {
+      try {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+          if (!mounted) return;
+          if (session?.user) {
+            let role: any = 'buyer';
+            let buyerStatus: any = 'verified';
+            let displayName = session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Member';
+            let avatarUrl = session.user.user_metadata?.avatar_url;
 
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            displayName: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Member',
-            avatarUrl: session.user.user_metadata?.avatar_url,
-            role,
-            buyerStatus,
-            createdAt: session.user.created_at
-          });
-        } else {
-          setUser(null);
-        }
-      });
+            try {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('id, display_name, avatar_url')
+                .eq('id', session.user.id)
+                .maybeSingle();
+              if (prof) {
+                if (prof.display_name) displayName = prof.display_name;
+                if (prof.avatar_url) avatarUrl = prof.avatar_url;
+              }
+            } catch {}
 
-      return () => {
-        mounted = false;
-        subscription.unsubscribe();
-      };
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              displayName,
+              avatarUrl,
+              role,
+              buyerStatus,
+              createdAt: session.user.created_at,
+              isDemo: false
+            });
+            setAuthMode('cloud');
+          } else {
+            // Only clear user if not already in local demo mode
+            setUser(prev => (prev?.isDemo ? prev : null));
+          }
+        });
+
+        return () => {
+          mounted = false;
+          subscription.unsubscribe();
+        };
+      } catch {}
     }
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [initializeAuth]);
 
   const signIn = async (email: string, password: string) => {
-    const { user: loggedInUser, error } = await signInWithEmail(email, password);
+    const { user: loggedInUser, error, mode } = await signInWithEmail(email, password);
     if (!error && loggedInUser) {
       setUser(loggedInUser);
+      const effectiveMode = mode || (loggedInUser.isDemo ? 'demo' : 'cloud');
+      setAuthMode(effectiveMode);
+      if (effectiveMode === 'cloud') {
+        setCloudHealth('CLOUD_AVAILABLE');
+        setCloudAvailability(true);
+      }
     }
-    return { error };
+    return { error, mode };
   };
 
   const signUp = async (email: string, password: string, displayName?: string) => {
-    const { user: newUser, error } = await signUpWithEmail(email, password, displayName);
+    const { user: newUser, error, mode } = await signUpWithEmail(email, password, displayName);
     if (!error && newUser) {
       setUser(newUser);
+      const effectiveMode = mode || (newUser.isDemo ? 'demo' : 'cloud');
+      setAuthMode(effectiveMode);
+      if (effectiveMode === 'cloud') {
+        setCloudHealth('CLOUD_AVAILABLE');
+        setCloudAvailability(true);
+      }
     }
-    return { error };
+    return { error, mode };
   };
 
   const signOut = async () => {
@@ -147,6 +213,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         isConfigured: isSupabaseConfigured,
+        authMode,
+        isCloudAvailable: cloudHealth === 'CLOUD_AVAILABLE' || getCloudAvailability(),
+        cloudHealth,
         signIn,
         signUp,
         signOut,

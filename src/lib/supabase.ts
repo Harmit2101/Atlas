@@ -10,7 +10,7 @@ export const isSupabaseConfigured = Boolean(
   !supabaseAnonKey.includes('your_supabase_anon_key')
 );
 
-if (!isSupabaseConfigured && import.meta.env.DEV) {
+if (!isSupabaseConfigured && import.meta.env.DEV && typeof window !== 'undefined' && window.localStorage?.getItem('atlas_debug') === '1') {
   console.info(
     '[ATLAS] Supabase credentials not set in .env.local. Operating with local persistent session storage.'
   );

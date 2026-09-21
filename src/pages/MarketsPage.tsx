@@ -8,6 +8,7 @@ import { GlobeScene } from '@/components/globe/GlobeScene';
 import { UnteraAttribution } from '@/components/ui/UnteraAttribution';
 import { useMarkets } from '@/hooks/useMarkets';
 import { useProperties } from '@/hooks/useProperties';
+import { useCountryBeacons } from '@/hooks/useCountryBeacons';
 import { deriveDestinationClusters } from '@/services/destinationService';
 import { DestinationCluster } from '@/types/destination';
 import { MarketScore } from '@/types/market';
@@ -15,6 +16,7 @@ import { MarketScore } from '@/types/market';
 export const MarketsPage: React.FC = () => {
   const navigate = useNavigate();
   const { scores, loading, error, refetch } = useMarkets();
+  const { beacons: countryBeacons } = useCountryBeacons();
   const { properties } = useProperties({ pageSize: 24 });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<MarketScore | null>(null);
@@ -46,9 +48,9 @@ export const MarketsPage: React.FC = () => {
 
   const handleCountryClick = (item: MarketScore) => {
     setSelectedCountry(item);
-    // Smooth transition into Explore filtered to this country
+    // Smooth transition into Explore filtered to this sovereign market at $300k+ luxury floor
     setTimeout(() => {
-      navigate(`/explore?country=${encodeURIComponent(item.country)}`);
+      navigate(`/explore?country=${encodeURIComponent(item.country)}&minPrice=300000`);
     }, 650);
   };
 
@@ -95,6 +97,16 @@ export const MarketsPage: React.FC = () => {
             <GlobeScene
               height="h-full"
               properties={properties}
+              countryBeacons={countryBeacons}
+              selectedCountryCode={selectedCountry?.country || null}
+              onCountrySelect={(beacon) => {
+                const found = scores.find(s => s.country.toUpperCase() === beacon.country.toUpperCase());
+                if (found) {
+                  handleCountryClick(found);
+                } else {
+                  navigate(`/explore?country=${encodeURIComponent(beacon.country)}&minPrice=300000`);
+                }
+              }}
               totalListingsCount={properties.length}
               showHUD={false}
             />
