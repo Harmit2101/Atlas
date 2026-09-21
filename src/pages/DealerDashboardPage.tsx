@@ -11,14 +11,16 @@ import { fetchInquiries } from '@/services/commercialService';
 import { DealerOrganization, DealerProperty, LeadAssignment, Inquiry } from '@/types/commercial';
 import { InvestorAnalyticsView } from '@/components/dealer/InvestorAnalyticsView';
 import { WhiteLabelSuiteView } from '@/components/dealer/WhiteLabelSuiteView';
+import { BillingUpgradeModal } from '@/components/dealer/BillingUpgradeModal';
 import { 
   Building, Plus, Home, Users, Check, X, 
-  Phone, Mail, Calendar, Loader2, ArrowUpRight, Lock, Eye, Activity, Sparkles
+  Phone, Mail, Calendar, Loader2, ArrowUpRight, Lock, Eye, Activity, Sparkles, Zap, CreditCard
 } from 'lucide-react';
 
 export const DealerDashboardPage: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'leads' | 'analytics' | 'whitelabel' | 'add_property'>('overview');
+  const [billingModalOpen, setBillingModalOpen] = useState(false);
   const [dealers, setDealers] = useState<DealerOrganization[]>([]);
   const [selectedDealer, setSelectedDealer] = useState<DealerOrganization | null>(null);
   const [properties, setProperties] = useState<DealerProperty[]>([]);
@@ -139,6 +141,13 @@ export const DealerDashboardPage: React.FC = () => {
 
         {selectedDealer && (
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setBillingModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-xs font-mono-luxury text-emerald-400 border border-emerald-500/40 shadow-sm transition-all"
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Upgrade Tier</span>
+            </button>
             <a
               href={`/agency/${selectedDealer.slug}`}
               target="_blank"
@@ -520,6 +529,16 @@ export const DealerDashboardPage: React.FC = () => {
           dealer={selectedDealer} 
         />
       )}
+
+      {/* RAZORPAY COMMERCIAL BILLING & UPGRADE MODAL */}
+      <BillingUpgradeModal
+        isOpen={billingModalOpen}
+        onClose={() => setBillingModalOpen(false)}
+        dealer={selectedDealer}
+        onPlanUpgraded={() => {
+          loadDealerData();
+        }}
+      />
     </div>
   );
 };

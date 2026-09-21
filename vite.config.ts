@@ -240,16 +240,90 @@ function unteraProxyPlugin(envApiKey?: string): Plugin {
   };
 }
 
+function razorpayDevPlugin(envKeyId?: string, envSecret?: string): Plugin {
+  return {
+    name: 'razorpay-dev-proxy',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/api/razorpay/')) {
+          return next();
+        }
+
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'METHOD_NOT_ALLOWED' }));
+          return;
+        }
+
+        let rawBody = '';
+        req.on('data', (chunk: any) => { rawBody += chunk; });
+        req.on('end', async () => {
+          try {
+            const body = rawBody ? JSON.parse(rawBody) : {};
+            const keyId = envKeyId || process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
+            const secret = envSecret || process.env.RAZORPAY_KEY_SECRET;
+
+            if (req.url?.includes('/create-order')) {
+              const { planId = 'agency_growth', billingCycle = 'annual', currency = 'USD' } = body;
+              const rates: Record<string, { monthlyUsd: number; monthlyInr: number; annualUsd: number; annualInr: number }> = {
+                broker_pro: { monthlyUsd: 299, monthlyInr: 24999, annualUsd: 2870, annualInr: 239990 },
+                agency_growth: { monthlyUsd: 1499, monthlyInr: 124999, annualUsd: 14390, annualInr: 1199990 },
+                enterprise_whitelabel: { monthlyUsd: 4997, monthlyInr: 415000, annualUsd: 47970, annualInr: 3990000 }
+              };
+              const plan = rates[planId] || rates.agency_growth;
+              const isAnnual = billingCycle === 'annual';
+              const amount = currency === 'INR'
+                ? (isAnnual ? plan.annualInr : plan.monthlyInr)
+                : (isAnnual ? plan.annualUsd : plan.monthlyUsd);
+
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                orderId: `order_dev_${Math.random().toString(36).slice(2, 10)}`,
+                amount: amount * 100,
+                currency,
+                keyId: keyId || 'rzp_test_placeholder',
+                isSimulated: !secret
+              }));
+              return;
+            }
+
+            if (req.url?.includes('/verify-payment')) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                success: true,
+                message: 'Payment verified and commercial tier upgraded successfully.'
+              }));
+              return;
+            }
+
+            next();
+          } catch (err: any) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+      });
+    }
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const unteraKey = env.UNTERA_API_KEY || process.env.UNTERA_API_KEY;
+  const rzpKey = env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
+  const rzpSecret = env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET;
 
   return {
     plugins: [
       react(),
       tailwindcss(),
       unteraProxyPlugin(unteraKey),
-      mediaValidationPlugin()
+      mediaValidationPlugin(),
+      razorpayDevPlugin(rzpKey, rzpSecret)
     ],
     resolve: {
       alias: {
