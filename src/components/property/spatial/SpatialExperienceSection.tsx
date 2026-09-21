@@ -3,8 +3,9 @@ import { AtlasProperty } from '@/types/property';
 import { SpatialMassingScene } from './SpatialMassingScene';
 import { PhotoImmersionScene } from './PhotoImmersionScene';
 import { SpatialFallback2D } from './SpatialFallback2D';
+import { CustomModelViewer } from './CustomModelViewer';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Box, Images, FileText, Compass } from 'lucide-react';
+import { Box, Images, FileText, Compass, Building } from 'lucide-react';
 import { isImageUrlBroken, markImageUrlBroken, isSuspectDomain } from '@/services/mediaService';
 
 interface SpatialExperienceSectionProps {
@@ -14,7 +15,7 @@ interface SpatialExperienceSectionProps {
   className?: string;
 }
 
-type SpatialMode = 'spatial' | 'photo' | 'blueprint';
+type SpatialMode = 'spatial' | 'custom_3d' | 'photo' | 'blueprint';
 
 class SpatialErrorBoundary extends React.Component<{ fallback: React.ReactNode; children: React.ReactNode }, { hasError: boolean }> {
   constructor(props: any) {
@@ -121,6 +122,19 @@ export const SpatialExperienceSection: React.FC<SpatialExperienceSectionProps> =
 
           <button
             type="button"
+            onClick={() => setActiveMode('custom_3d')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono-luxury uppercase tracking-wider transition-all ${
+              activeMode === 'custom_3d'
+                ? 'bg-[#c5a880] text-[#08080a] font-semibold shadow-md'
+                : 'text-[#8e8d93] hover:text-[#f4f2ec] hover:bg-white/5'
+            }`}
+          >
+            <Building className="w-3.5 h-3.5" />
+            <span>3D BIM / CAD</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveMode('photo')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono-luxury uppercase tracking-wider transition-all ${
               activeMode === 'photo'
@@ -203,6 +217,10 @@ export const SpatialExperienceSection: React.FC<SpatialExperienceSectionProps> =
               </div>
             )}
           </div>
+        )}
+
+        {activeMode === 'custom_3d' && (
+          <CustomModelViewer property={property} />
         )}
 
         {activeMode === 'photo' && (

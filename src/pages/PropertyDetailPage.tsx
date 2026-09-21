@@ -16,6 +16,8 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { SpatialExperienceSection } from '@/components/property/spatial/SpatialExperienceSection';
 import { FloorPlanSection } from '@/components/property/FloorPlanSection';
+import { ProFormaCalculator } from '@/components/property/financials/ProFormaCalculator';
+import { OfferingMemorandumSection } from '@/components/property/dealroom/OfferingMemorandumSection';
 import { submitInquiry, submitListingClaim, recordEngagement } from '@/services/commercialService';
 import { BuyerType, PurchasePurpose, PurchaseTimeline, FinancingStatus } from '@/types/commercial';
 import { usePropertyImage } from '@/hooks/usePropertyImage';
@@ -149,6 +151,7 @@ export const PropertyDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [omModalOpen, setOmModalOpen] = useState(false);
   
   // Phase 1 Commercial State
   const [inquirySubmitting, setInquirySubmitting] = useState(false);
@@ -685,6 +688,23 @@ export const PropertyDetailPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Institutional Pro-Forma Underwriting Engine */}
+            <ErrorBoundary componentName="Pro-Forma Underwriting">
+              <ProFormaCalculator
+                property={property}
+                onUnlockOM={() => setOmModalOpen(true)}
+              />
+            </ErrorBoundary>
+
+            {/* Digital Offering Memorandum & Virtual Deal Room */}
+            <ErrorBoundary componentName="Offering Memorandum Deal Room">
+              <OfferingMemorandumSection
+                property={property}
+                isOpenModalRequested={omModalOpen}
+                onCloseModalRequest={() => setOmModalOpen(false)}
+              />
+            </ErrorBoundary>
           </div>
 
           {/* Right Inquiry Concierge Box */}

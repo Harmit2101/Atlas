@@ -9,14 +9,16 @@ import {
 } from '@/services/dealerService';
 import { fetchInquiries } from '@/services/commercialService';
 import { DealerOrganization, DealerProperty, LeadAssignment, Inquiry } from '@/types/commercial';
+import { InvestorAnalyticsView } from '@/components/dealer/InvestorAnalyticsView';
+import { WhiteLabelSuiteView } from '@/components/dealer/WhiteLabelSuiteView';
 import { 
   Building, Plus, Home, Users, Check, X, 
-  Phone, Mail, Calendar, Loader2, ArrowUpRight, Lock, Eye
+  Phone, Mail, Calendar, Loader2, ArrowUpRight, Lock, Eye, Activity, Sparkles
 } from 'lucide-react';
 
 export const DealerDashboardPage: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'leads' | 'add_property'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'leads' | 'analytics' | 'whitelabel' | 'add_property'>('overview');
   const [dealers, setDealers] = useState<DealerOrganization[]>([]);
   const [selectedDealer, setSelectedDealer] = useState<DealerOrganization | null>(null);
   const [properties, setProperties] = useState<DealerProperty[]>([]);
@@ -182,6 +184,24 @@ export const DealerDashboardPage: React.FC = () => {
           }`}
         >
           Assigned Inquiries ({inquiries.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('analytics')}
+          className={`pb-2 border-b-2 transition-all flex items-center gap-1.5 ${
+            activeTab === 'analytics' ? 'border-[#c5a880] text-[#c5a880] font-semibold' : 'border-transparent text-[#8e8d93] hover:text-[#f4f2ec]'
+          }`}
+        >
+          <Activity className="w-3 h-3 text-emerald-400" />
+          <span>Deal-Room Analytics</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('whitelabel')}
+          className={`pb-2 border-b-2 transition-all flex items-center gap-1.5 ${
+            activeTab === 'whitelabel' ? 'border-[#c5a880] text-[#c5a880] font-semibold' : 'border-transparent text-[#8e8d93] hover:text-[#f4f2ec]'
+          }`}
+        >
+          <Sparkles className="w-3 h-3 text-[#c5a880]" />
+          <span>White-Label Suite</span>
         </button>
         <button
           onClick={() => setActiveTab('add_property')}
@@ -484,6 +504,21 @@ export const DealerDashboardPage: React.FC = () => {
             </form>
           )}
         </div>
+      )}
+
+      {/* DEAL-ROOM ANALYTICS TAB */}
+      {activeTab === 'analytics' && (
+        <InvestorAnalyticsView 
+          dealer={selectedDealer} 
+          properties={properties} 
+        />
+      )}
+
+      {/* WHITE-LABEL SUITE TAB */}
+      {activeTab === 'whitelabel' && (
+        <WhiteLabelSuiteView 
+          dealer={selectedDealer} 
+        />
       )}
     </div>
   );

@@ -14,6 +14,7 @@ export const AgencyStorefrontPage: React.FC = () => {
   const [dealer, setDealer] = useState<DealerOrganization | null>(null);
   const [properties, setProperties] = useState<DealerProperty[]>([]);
   const [loading, setLoading] = useState(true);
+  const [whiteLabel, setWhiteLabel] = useState<any>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -24,6 +25,15 @@ export const AgencyStorefrontPage: React.FC = () => {
         setDealer(org);
         const props = await fetchDealerProperties(org.id);
         setProperties(props);
+
+        // Load white-label overrides
+        const savedWl = localStorage.getItem(`atlas_whitelabel_config_${org.id}`) || 
+                        localStorage.getItem('atlas_whitelabel_config_default');
+        if (savedWl) {
+          try {
+            setWhiteLabel(JSON.parse(savedWl));
+          } catch {}
+        }
       }
       setLoading(false);
     }
@@ -71,13 +81,33 @@ export const AgencyStorefrontPage: React.FC = () => {
 
       {/* Agency Hero Header */}
       <div className="bg-[#111116] border border-white/10 rounded-sm p-8 sm:p-12 relative overflow-hidden">
+        {/* White-label watermark if configured */}
+        {whiteLabel?.disclaimerWatermark && (
+          <div className="mb-4 inline-block px-3 py-1 rounded bg-black/40 border border-white/10 text-[9px] font-mono-luxury tracking-widest text-[#8e8d93]">
+            {whiteLabel.disclaimerWatermark}
+          </div>
+        )}
+
         <div className="max-w-3xl space-y-6">
           <div className="flex items-center gap-2 text-[10px] font-mono-luxury uppercase tracking-widest text-[#c5a880]">
             <ShieldCheck className="w-4 h-4 text-[#c5a880]" />
-            <span>Atlas Verified Partner Agency · {dealer.country}</span>
+            <span>
+              {whiteLabel?.removeAtlasBranding ? 'Authorized Commercial Desk' : 'Atlas Verified Partner Agency'} · {dealer.country}
+            </span>
           </div>
 
-          <h1 className="font-editorial text-4xl sm:text-5xl text-[#f4f2ec]">{dealer.name}</h1>
+          <div className="flex items-center gap-4">
+            {whiteLabel?.logoUrl && (
+              <img 
+                src={whiteLabel.logoUrl} 
+                alt={whiteLabel.agencyName || dealer.name} 
+                className="w-12 h-12 rounded object-cover border border-white/20 shadow-md" 
+              />
+            )}
+            <h1 className="font-editorial text-4xl sm:text-5xl text-[#f4f2ec]">
+              {whiteLabel?.agencyName || dealer.name}
+            </h1>
+          </div>
 
           {dealer.description ? (
             <p className="text-sm text-[#8e8d93] leading-relaxed font-light">
