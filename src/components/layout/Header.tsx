@@ -18,15 +18,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch }) => {
     ? [
         { label: 'EXPLORE', path: '/explore' },
         { label: 'MARKETS', path: '/markets' },
+        { label: 'DASHBOARD', path: '/dealer-dashboard' },
         { label: 'PRIVATE CLIENT', path: '/private-client' },
         { label: 'SAVED', path: '/saved' },
-        ...(user.role === 'dealer' ? [{ label: 'DEALER', path: '/dealer' }] : []),
         ...(user.role === 'admin' || user.email?.includes('admin') || user.email?.includes('hmcoding.com') ? [{ label: 'LEAD DESK', path: '/admin/inquiries' }] : []),
         { label: 'ACCOUNT', path: '/account' }
       ]
     : [
         { label: 'EXPLORE', path: '/explore' },
         { label: 'MARKETS', path: '/markets' },
+        { label: 'DASHBOARD', path: '/dealer-dashboard' },
         { label: 'ABOUT', path: '/about' },
         { label: 'CONTACT', path: '/contact' }
       ];

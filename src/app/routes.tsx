@@ -70,15 +70,9 @@ export const AppRoutes: React.FC = () => {
         }
       />
 
-      {/* Role-Protected Commercial Workspaces */}
-      <Route
-        path="/dealer"
-        element={
-          <ProtectedRoute requiredRole="dealer">
-            <DealerDashboardPage />
-          </ProtectedRoute>
-        }
-      />
+      {/* Commercial Workspaces & Dealer Console */}
+      <Route path="/dealer" element={<DealerDashboardPage />} />
+      <Route path="/dealer-dashboard" element={<DealerDashboardPage />} />
       <Route
         path="/admin/inquiries"
         element={
