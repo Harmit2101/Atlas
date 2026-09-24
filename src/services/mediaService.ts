@@ -91,11 +91,7 @@ export function extractDomain(url: string): string {
   }
 }
 
-export function isDeadUnteraUrl(url: string): boolean {
-  if (!url) return true;
-  if (url.includes('api.untera.io/images/uploads/')) return true;
-  if (url.includes('api.untera.io/images/') && !url.includes('/images/uploads/')) return true;
-  if (url.startsWith('/images/')) return true;
+export function isDeadUnteraUrl(_url: string): boolean {
   return false;
 }
 
@@ -391,11 +387,6 @@ export function normalizeListingMedia(raw: UnteraRawListing): NormalizedListingM
         url = `https://api.untera.io/${rawStr}`;
       }
 
-      // Skip known dead 502/404 Untera URLs completely to protect network and avoid UI hangs
-      if (isDeadUnteraUrl(url)) {
-        continue;
-      }
-
       if (!seen.has(url)) {
         seen.add(url);
         rawCandidates.push({
@@ -408,22 +399,7 @@ export function normalizeListingMedia(raw: UnteraRawListing): NormalizedListingM
     }
   }
 
-  // Prioritize reliable candidate sources ahead of suspect CDN domains (Phase 6 & Phase 7)
-  const reliableCandidates: MediaCandidate[] = [];
-  const suspectCandidates: MediaCandidate[] = [];
-  for (const c of rawCandidates) {
-    if (isSuspectDomain(c.url)) {
-      suspectCandidates.push(c);
-    } else {
-      reliableCandidates.push(c);
-    }
-  }
-
-  // Phase 6 & Phase 7: Discard suspect CDN domains if reliable source candidates exist
-  let candidates = reliableCandidates.length > 0
-    ? reliableCandidates
-    : suspectCandidates;
-
+  const candidates = rawCandidates;
   const images = candidates.map(c => c.url);
 
   // Videos and Virtual Tours

@@ -51,7 +51,7 @@ export async function fetchGlobalDiscoveryFeed(
   signal?: AbortSignal
 ): Promise<FetchPropertiesResult> {
   const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
-  const cacheKey = `DISCOVERY_P${page}_H${hourSeed}`;
+  const cacheKey = `DISCOVERY_V3_P${page}_H${hourSeed}`;
 
   // 1. Check in-memory cache
   const cached = discoveryCache.get(cacheKey);
@@ -73,11 +73,12 @@ export async function fetchGlobalDiscoveryFeed(
 
   inflightDiscoveryPromise = (async () => {
     try {
-      // Single-roundtrip global luxury search (3-4 seconds vs 60 seconds)
+      // Single-roundtrip global luxury search with fresh listings
       const res = await searchListings({
         minPrice: 300000,
         pageSize: 24,
-        page
+        page,
+        sort: 'newest'
       }, signal);
 
       const items = res?.results || (res as any)?.listings || (res as any)?.data || [];
