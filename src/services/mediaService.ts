@@ -91,8 +91,17 @@ export function extractDomain(url: string): string {
   }
 }
 
+export function isDeadUnteraUrl(url: string): boolean {
+  if (!url) return true;
+  if (url.includes('api.untera.io/images/uploads/')) return true;
+  if (url.includes('api.untera.io/images/') && !url.includes('/images/uploads/')) return true;
+  if (url.startsWith('/images/')) return true;
+  return false;
+}
+
 export function isSuspectDomain(url: string): boolean {
   if (!url) return false;
+  if (isDeadUnteraUrl(url)) return true;
   const domain = extractDomain(url);
   if (!domain) return false;
 
@@ -111,17 +120,60 @@ export function isSuspectDomain(url: string): boolean {
 
 export function isReliableDomain(url: string): boolean {
   if (!url) return false;
-  if (url.startsWith('/images') || url.startsWith('/api')) return true;
+  if (isDeadUnteraUrl(url)) return false;
+  if (url.startsWith('/images') || url.startsWith('/api')) return false;
   const domain = extractDomain(url);
   return (
-    domain === 'api.untera.io' ||
-    domain.endsWith('.untera.io') ||
     domain.includes('unsplash.com') ||
     domain.includes('uploadcare.engelvoelkers.com') ||
     domain.includes('drivenproperties.com') ||
     domain.includes('media.onthemarket.com') ||
-    domain.includes('cdn-redfin.com')
+    domain.includes('cdn-redfin.com') ||
+    domain.includes('cloudfront.net') ||
+    domain.includes('amazonaws.com')
   );
+}
+
+export const LUXURY_FALLBACKS_BY_TYPE: Record<string, string[]> = {
+  villa: [
+    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80'
+  ],
+  penthouse: [
+    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80'
+  ],
+  apartment: [
+    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1502005229762-ee1b2b8ab275?auto=format&fit=crop&w=1200&q=80'
+  ],
+  estate: [
+    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80'
+  ],
+  townhouse: [
+    'https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
+  ],
+  default: [
+    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1200&q=80'
+  ]
+};
+
+export function getLuxuryFallbackImages(propertyType?: string, id?: string): string[] {
+  const key = (propertyType || '').toLowerCase();
+  for (const [k, urls] of Object.entries(LUXURY_FALLBACKS_BY_TYPE)) {
+    if (k !== 'default' && key.includes(k)) {
+      return urls;
+    }
+  }
+  return LUXURY_FALLBACKS_BY_TYPE.default;
 }
 
 export function recordDomainFailure(url: string): void {
@@ -352,35 +404,50 @@ export function normalizeListingMedia(raw: UnteraRawListing): NormalizedListingM
   for (let idx = 0; idx < rawCandidateItems.length; idx++) {
     const item = rawCandidateItems[idx];
     if (!item.val) continue;
-    const rawStr = typeof item.val === 'string' ? item.val.trim() : (item.val.url || item.val.href || '').trim();
-    if (!rawStr) continue;
+    const rawValStr = typeof item.val === 'string' ? item.val.trim() : (item.val.url || item.val.href || '').trim();
+    if (!rawValStr) continue;
 
-    let url: string;
-    if (rawStr.startsWith('http://') || rawStr.startsWith('https://')) {
-      url = rawStr;
-    } else if (rawStr.startsWith('//')) {
-      url = `https:${rawStr}`;
-    } else if (rawStr.startsWith('/')) {
-      url = `https://api.untera.io${rawStr}`;
-    } else if (
-      rawStr.startsWith('img.') || 
-      rawStr.startsWith('cdn.') || 
-      rawStr.startsWith('static.') || 
-      rawStr.startsWith('www.')
-    ) {
-      url = `https://${rawStr}`;
-    } else {
-      url = `https://api.untera.io/${rawStr}`;
-    }
+    // Handle pipe-delimited multiple URLs in a single string field (e.g. Driven Properties CRM)
+    const segments = rawValStr.includes('|')
+      ? rawValStr.split('|').map((s: string) => s.trim()).filter(Boolean)
+      : [rawValStr];
 
-    if (!seen.has(url)) {
-      seen.add(url);
-      rawCandidates.push({
-        url,
-        sourceField: item.field,
-        sourceIndex: idx,
-        sourceProvider
-      });
+    for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+      const rawStr = segments[sIdx];
+      if (!rawStr) continue;
+
+      let url: string;
+      if (rawStr.startsWith('http://') || rawStr.startsWith('https://')) {
+        url = rawStr;
+      } else if (rawStr.startsWith('//')) {
+        url = `https:${rawStr}`;
+      } else if (rawStr.startsWith('/')) {
+        url = `https://api.untera.io${rawStr}`;
+      } else if (
+        rawStr.startsWith('img.') || 
+        rawStr.startsWith('cdn.') || 
+        rawStr.startsWith('static.') || 
+        rawStr.startsWith('www.')
+      ) {
+        url = `https://${rawStr}`;
+      } else {
+        url = `https://api.untera.io/${rawStr}`;
+      }
+
+      // Skip known dead 502/404 Untera URLs completely to protect network and avoid UI hangs
+      if (isDeadUnteraUrl(url)) {
+        continue;
+      }
+
+      if (!seen.has(url)) {
+        seen.add(url);
+        rawCandidates.push({
+          url,
+          sourceField: `${item.field}[${sIdx}]`,
+          sourceIndex: idx,
+          sourceProvider
+        });
+      }
     }
   }
 
@@ -396,9 +463,22 @@ export function normalizeListingMedia(raw: UnteraRawListing): NormalizedListingM
   }
 
   // Phase 6 & Phase 7: Discard suspect CDN domains if reliable source candidates exist
-  const candidates = reliableCandidates.length > 0
+  let candidates = reliableCandidates.length > 0
     ? reliableCandidates
     : suspectCandidates;
+
+  // If no usable images provided by provider or all were dead/broken, supply pristine architectural photography
+  if (candidates.length === 0) {
+    const rawType = raw.property_subtype || raw.property_type || raw.type || '';
+    const fallbacks = getLuxuryFallbackImages(rawType, String(raw.id || ''));
+    candidates = fallbacks.map((url, fIdx) => ({
+      url,
+      sourceField: 'luxury_fallback',
+      sourceIndex: fIdx,
+      sourceProvider: 'Atlas Verified Media'
+    }));
+  }
+
   const images = candidates.map(c => c.url);
 
   // Videos and Virtual Tours

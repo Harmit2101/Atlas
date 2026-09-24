@@ -124,6 +124,7 @@ const ThumbnailButton: React.FC<ThumbnailButtonProps> = ({
           alt={`Listing view ${index + 1}`}
           loading="lazy"
           decoding="async"
+          referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => {
             setHasError(true);
@@ -451,6 +452,7 @@ export const PropertyDetailPage: React.FC = () => {
                 alt={property.title}
                 loading="eager"
                 decoding="async"
+                referrerPolicy="no-referrer"
                 onLoad={handleHeroImageLoad}
                 onError={handleHeroImageError}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${

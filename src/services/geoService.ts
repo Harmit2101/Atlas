@@ -141,7 +141,8 @@ export function resolveListingLocation(raw: any): ResolvedLocation {
   // Match country from address string
   if (!country && rawAddr) {
     for (const c of COUNTRY_BOUNDARIES) {
-      const pattern = new RegExp(`\\b(${c.name}|${c.code}|${(c.aliases || []).join('|')})\\b`, 'i');
+      const tokens = [c.name, c.code, ...(c.aliases || [])].filter(Boolean);
+      const pattern = new RegExp(`\\b(${tokens.join('|')})\\b`, 'i');
       if (pattern.test(rawAddr)) {
         country = c.name;
         countryCode = countryCode || c.code;
@@ -153,7 +154,8 @@ export function resolveListingLocation(raw: any): ResolvedLocation {
   // Match country from listing source (e.g. "Melton Properties Ghana")
   if (!country && raw.source) {
     for (const c of COUNTRY_BOUNDARIES) {
-      const pattern = new RegExp(`\\b(${c.name}|${c.code})\\b`, 'i');
+      const tokens = [c.name, c.code, ...(c.aliases || [])].filter(Boolean);
+      const pattern = new RegExp(`\\b(${tokens.join('|')})\\b`, 'i');
       if (pattern.test(raw.source)) {
         country = c.name;
         countryCode = countryCode || c.code;

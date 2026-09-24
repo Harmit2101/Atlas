@@ -85,6 +85,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, priority =
                 alt={property.title}
                 loading={priority ? 'eager' : 'lazy'}
                 decoding="async"
+                referrerPolicy="no-referrer"
                 onLoad={handleLoad}
                 onError={handleError}
                 className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-105 ${
