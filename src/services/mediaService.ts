@@ -124,7 +124,6 @@ export function isReliableDomain(url: string): boolean {
   if (url.startsWith('/images') || url.startsWith('/api')) return false;
   const domain = extractDomain(url);
   return (
-    domain.includes('unsplash.com') ||
     domain.includes('uploadcare.engelvoelkers.com') ||
     domain.includes('drivenproperties.com') ||
     domain.includes('media.onthemarket.com') ||
@@ -132,48 +131,6 @@ export function isReliableDomain(url: string): boolean {
     domain.includes('cloudfront.net') ||
     domain.includes('amazonaws.com')
   );
-}
-
-export const LUXURY_FALLBACKS_BY_TYPE: Record<string, string[]> = {
-  villa: [
-    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80'
-  ],
-  penthouse: [
-    'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80'
-  ],
-  apartment: [
-    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1502005229762-ee1b2b8ab275?auto=format&fit=crop&w=1200&q=80'
-  ],
-  estate: [
-    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80'
-  ],
-  townhouse: [
-    'https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
-  ],
-  default: [
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1200&q=80'
-  ]
-};
-
-export function getLuxuryFallbackImages(propertyType?: string, id?: string): string[] {
-  const key = (propertyType || '').toLowerCase();
-  for (const [k, urls] of Object.entries(LUXURY_FALLBACKS_BY_TYPE)) {
-    if (k !== 'default' && key.includes(k)) {
-      return urls;
-    }
-  }
-  return LUXURY_FALLBACKS_BY_TYPE.default;
 }
 
 export function recordDomainFailure(url: string): void {
@@ -466,18 +423,6 @@ export function normalizeListingMedia(raw: UnteraRawListing): NormalizedListingM
   let candidates = reliableCandidates.length > 0
     ? reliableCandidates
     : suspectCandidates;
-
-  // If no usable images provided by provider or all were dead/broken, supply pristine architectural photography
-  if (candidates.length === 0) {
-    const rawType = raw.property_subtype || raw.property_type || raw.type || '';
-    const fallbacks = getLuxuryFallbackImages(rawType, String(raw.id || ''));
-    candidates = fallbacks.map((url, fIdx) => ({
-      url,
-      sourceField: 'luxury_fallback',
-      sourceIndex: fIdx,
-      sourceProvider: 'Atlas Verified Media'
-    }));
-  }
 
   const images = candidates.map(c => c.url);
 

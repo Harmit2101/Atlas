@@ -1,9 +1,8 @@
 import { AtlasProperty, PropertyFilterState, UnteraRawListing, ListingIntent, RentalPeriod } from '@/types/property';
 import { searchListings, getListing, isUnteraConfigured } from '@/lib/untera';
 import { resolveListingLocation } from '@/services/geoService';
-import { fetchGlobalDiscoveryFeed, mapLegacyPropertyToAtlas } from '@/services/globalDiscoveryService';
+import { fetchGlobalDiscoveryFeed } from '@/services/globalDiscoveryService';
 import { isHighValueSale, isUltraLuxuryRental, resolveUsdValuation } from '@/services/inventoryRules';
-import { PROPERTIES } from '@/data/properties';
 
 import { 
   normalizeListingMedia, 
@@ -410,24 +409,6 @@ export async function fetchProperties(
       );
     }
 
-    // If Untera returns no matching properties, check Atlas Private Collection for relevant matches
-    if (properties.length === 0) {
-      const q = (filter.searchQuery || filter.location || filter.country || '').toLowerCase().trim();
-      const localMatches = PROPERTIES.filter(p => {
-        if (!q) return true;
-        return (
-          p.title.toLowerCase().includes(q) ||
-          p.city.toLowerCase().includes(q) ||
-          p.country.toLowerCase().includes(q) ||
-          p.propertyType.toLowerCase().includes(q)
-        );
-      }).map(mapLegacyPropertyToAtlas);
-
-      if (localMatches.length > 0) {
-        properties = localMatches;
-      }
-    }
-
     return {
       properties,
       total: properties.length >= 24 ? (response.count || response.total || properties.length) : properties.length,
@@ -438,15 +419,15 @@ export async function fetchProperties(
     };
   } catch (err: any) {
     if (err.name === 'AbortError') throw err;
-    console.warn('[ATLAS] Search API error, falling back to curated portfolio:', err.message);
-    const fallbackProperties = PROPERTIES.slice(0, 12).map(mapLegacyPropertyToAtlas);
+    console.warn('[ATLAS] Search API error:', err.message);
     return {
-      properties: fallbackProperties,
-      total: fallbackProperties.length,
+      properties: [],
+      total: 0,
       page: filter.page || 1,
       pageSize: filter.pageSize || 24,
-      isLive: true,
-      source: 'untera'
+      isLive: false,
+      source: 'untera',
+      error: err.message || 'Error fetching search listings'
     };
   }
 }
@@ -488,17 +469,8 @@ export async function fetchPropertyById(
   id: string,
   signal?: AbortSignal
 ): Promise<AtlasProperty | null> {
-  // Check Atlas Private Collection first for instant 0ms resolution of flagship properties
-  if (id.startsWith('atlas-')) {
-    const sampleMatch = PROPERTIES.find(p => p.id === id);
-    if (sampleMatch) {
-      return mapLegacyPropertyToAtlas(sampleMatch);
-    }
-  }
-
   if (!isUnteraConfigured()) {
-    const fallbackMatch = PROPERTIES.find(p => p.id === id);
-    return fallbackMatch ? mapLegacyPropertyToAtlas(fallbackMatch) : null;
+    return null;
   }
 
   const candidates = resolveListingIdCandidates(id);
@@ -513,12 +485,6 @@ export async function fetchPropertyById(
       if (err.name === 'AbortError') throw err;
       // Continue trying next candidate if listing is not found
     }
-  }
-
-  // Final fallback to Atlas collection
-  const fallbackMatch = PROPERTIES.find(p => p.id === id);
-  if (fallbackMatch) {
-    return mapLegacyPropertyToAtlas(fallbackMatch);
   }
 
   console.warn('[ATLAS] Live property lookup failed for ID and all candidate variants:', id);
