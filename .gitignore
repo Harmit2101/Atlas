@@ -28,3 +28,6 @@ dist-ssr
 
 # Supabase
 supabase/.temp/
+
+# Marketing & Promos
+promos/

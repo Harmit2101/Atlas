@@ -38,23 +38,17 @@ export default async function handler(req: any, res: any) {
     const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const event = payload.event;
 
-    console.log(`[ATLAS Razorpay Webhook] Received event: ${event}`);
-
     // Handle relevant payment events
     switch (event) {
       case 'payment.captured':
       case 'order.paid':
-        // The notes on the payment contain plan_id and agency_name
-        const notes = payload.payload?.payment?.entity?.notes || {};
-        console.log('[ATLAS Razorpay Webhook] Provisioning plan:', notes.plan_id, 'for', notes.agency_name);
         break;
 
       case 'subscription.charged':
-        console.log('[ATLAS Razorpay Webhook] Subscription renewal charged.');
         break;
 
       default:
-        console.log(`[ATLAS Razorpay Webhook] Unhandled event type: ${event}`);
+        break;
     }
 
     res.writeHead?.(200, { 'Content-Type': 'application/json' }) || res.status?.(200);
